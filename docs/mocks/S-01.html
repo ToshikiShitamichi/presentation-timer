@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #101418;
+    --panel: #1a2027;
+    --line: #2c343d;
+    --text: #eef2f5;
+    --muted: #8c98a4;
+    --accent: #5cc8ff;
+    --break: #ffc857;
+    --warn: #ff7a6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  [hidden] { display: none !important; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* S-01 進行表の取り込み画面 */
+  .import {
+    min-height: 100%;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 14px;
+    max-width: 720px; margin: 0 auto;
+  }
+  .import h1 { font-size: 20px; font-weight: 700; }
+  .import label { font-size: 14px; color: var(--muted); }
+  .import textarea {
+    flex: 1; min-height: 50vh; width: 100%;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; font-size: 14px; line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+  }
+  .import textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .import .error { color: var(--warn); font-size: 14px; min-height: 1.4em; }
+  .import button {
+    background: var(--accent); color: #06202e;
+    border: none; border-radius: 10px;
+    font-size: 18px; font-weight: 700; padding: 16px;
+    cursor: pointer;
+  }
+  .import button:active { opacity: .8; }
+
+  .import input[type=date] {
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; font-size: 16px; color-scheme: dark;
+  }
+  .import input[type=date]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* S-03 講義の一覧画面 */
+  .list-screen {
+    min-height: 100%;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 18px;
+    max-width: 720px; margin: 0 auto;
+  }
+  .list-screen h1 { font-size: 20px; font-weight: 700; }
+  .day h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+  .day ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .lecture {
+    width: 100%; text-align: left; cursor: pointer;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+    font: inherit;
+  }
+  .lecture:active { border-color: var(--accent); }
+  .lecture .time { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .lecture .first { font-size: 14px; color: var(--muted); }
+  .empty { color: var(--muted); font-size: 15px; padding: 24px 0; text-align: center; }
+  .primary {
+    background: var(--accent); color: #06202e;
+    border: none; border-radius: 10px;
+    font-size: 18px; font-weight: 700; padding: 16px; cursor: pointer;
+  }
+  .primary:active { opacity: .8; }
+
+  /* S-02 講義中の表示画面 */
+  .live {
+    height: 100%;
+    padding: max(16px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    gap: 2vh;
+  }
+  .clock { font-size: clamp(28px, 9vw, 64px); font-weight: 600; color: var(--muted); }
+  .slides { font-size: clamp(30px, 10vw, 80px); font-weight: 800; color: var(--accent); line-height: 1.15; }
+  .content {
+    font-size: clamp(20px, 6vw, 44px); font-weight: 700; line-height: 1.35;
+    align-self: center; overflow-wrap: anywhere;
+  }
+  .content.is-break { color: var(--break); font-size: clamp(44px, 16vw, 120px); text-align: center; }
+  .remain-wrap { border-top: 1px solid var(--line); padding-top: 1.5vh; }
+  .remain-label { font-size: clamp(13px, 3.5vw, 18px); color: var(--muted); }
+  .remain { font-size: clamp(56px, 22vw, 160px); font-weight: 800; line-height: 1; }
+  .remain.is-over { color: var(--warn); }
+
+  /* 横向き：左に内容、右に時間 */
+  @media (orientation: landscape) and (max-height: 600px) {
+    .live {
+      grid-template-columns: 1.4fr 1fr;
+      grid-template-rows: auto 1fr auto;
+      column-gap: 4vw;
+    }
+    .clock { grid-column: 2; grid-row: 1; text-align: right; font-size: clamp(24px, 6vh, 48px); }
+    .slides { grid-column: 1; grid-row: 1; font-size: clamp(26px, 9vh, 64px); }
+    .content { grid-column: 1; grid-row: 2 / 4; font-size: clamp(18px, 6vh, 40px); }
+    .content.is-break { font-size: clamp(40px, 18vh, 110px); }
+    .remain-wrap { grid-column: 2; grid-row: 2 / 4; align-self: end; border-top: none; text-align: right; }
+    .remain { font-size: clamp(48px, 28vh, 150px); }
+  }
+</style>
+<link rel="manifest" href='data:application/manifest+json,{"name":"講義時間管理アプリ","short_name":"講義時間","display":"standalone","background_color":"%23101418","theme_color":"%23101418","start_url":"."}'>
+</head>
+<body>
+<section class="import" data-screen-id="S-01" id="s01" hidden>
+  <h1>講義時間管理アプリ</h1>
+  <label for="tsv">進行表のテキスト（スプレッドシートからコピーして貼り付け）</label>
+  <textarea id="tsv" spellcheck="false" placeholder="開始時間	所要時間	ステップ	進め方・手順	…"></textarea>
+  <p class="error" id="importError" role="alert"></p>
+  <button type="button" id="importBtn">取り込む</button>
+</section>
+</body>
+</html>
