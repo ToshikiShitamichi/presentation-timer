@@ -1,0 +1,13 @@
+{
+  "name": "presentation-timer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "講義時間管理アプリ（ビルドなし。アプリ本体はパッケージ0個）",
+  "scripts": {
+    "test": "node --test --test-reporter=dot"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

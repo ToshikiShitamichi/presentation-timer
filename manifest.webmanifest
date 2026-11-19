@@ -1,0 +1,8 @@
+{
+  "name": "講義時間管理アプリ",
+  "short_name": "講義時間",
+  "display": "standalone",
+  "background_color": "#101418",
+  "theme_color": "#101418",
+  "start_url": "."
+}
