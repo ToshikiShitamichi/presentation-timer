@@ -1,11 +1,15 @@
 import { parseHash } from "./router.mjs";
 import { screens } from "./screens/registry.mjs";
 
+let cleanup = null; // 表示中の画面のあと始末（S-02 のタイマーなど）
+
 function show() {
+  if (typeof cleanup === "function") cleanup();
+  cleanup = null;
   const id = parseHash(location.hash);
   const container = document.getElementById("app");
   document.body.dataset.screen = id;
-  screens[id].render(container);
+  cleanup = screens[id].render(container);
 }
 
 window.addEventListener("hashchange", show);

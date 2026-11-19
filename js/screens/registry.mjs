@@ -1,6 +1,7 @@
 // 画面ごとの置き場。各画面の中身は後続の tasks.md のタスクで作る（モックは docs/mocks/S-0x.html）。
 // render(container, params) は、画面の DOM を container に入れる。ユーザー入力を innerHTML に渡すときは escapeHtml を通すこと。
 import { liveView } from "../live-view.mjs";
+import { startLiveTicker } from "../live-ticker.mjs";
 import { registerLecture } from "../register.mjs";
 
 export function escapeHtml(s) {
@@ -56,15 +57,19 @@ const STATE_TEXT = {
 };
 
 // 講義中の表示画面。params: { blocks（進行表）, now（Date または 0時からの秒数。省略すると今）}
-// 自動の更新は tasks.md の T-006。一覧から講義を選ぶ流れは T-008。
+// clock（{ now, setInterval, clearInterval }）は時計の差し替え用（省略すると本物）。
+// 1秒ごとに表示を更新し（tasks.md の T-006）、戻り値の関数でタイマーを止める（別の画面へ移るとき main.mjs が呼ぶ）。
+// 一覧から講義を選ぶ流れは T-008。
 const s02 = {
   id: "S-02",
   name: "講義中の表示",
   render(container, params = {}) {
     const blocks = params.blocks;
     const hasBlocks = Array.isArray(blocks) && blocks.length > 0;
+    const clock = params.clock ?? {};
+    const nowFn = clock.now ?? (() => params.now ?? new Date());
     const v = hasBlocks
-      ? liveView(blocks, params.now ?? new Date())
+      ? liveView(blocks, nowFn())
       : { state: "none", clock: "--:--:--", slides: "", content: "", isBreak: false, remainText: "--:--", isOver: false };
     const content = v.state === "during" ? v.content : STATE_TEXT[v.state];
     container.innerHTML =
@@ -76,6 +81,21 @@ const s02 = {
       `<div class="remain-wrap"><div class="remain-label" id="remainLabel">残り時間</div>` +
       `<div class="remain num${v.isOver ? " is-over" : ""}" id="remain">${escapeHtml(v.remainText)}</div></div>` +
       `</section>`;
+    if (!hasBlocks) return () => {};
+    const $ = (id) => container.querySelector("#" + id);
+    return startLiveTicker(blocks, {
+      now: nowFn,
+      setInterval: clock.setInterval,
+      clearInterval: clock.clearInterval,
+      onUpdate(nv) {
+        $("clock").textContent = nv.clock;
+        $("slides").textContent = nv.slides;
+        $("content").textContent = nv.state === "during" ? nv.content : STATE_TEXT[nv.state];
+        $("content").classList.toggle("is-break", nv.isBreak);
+        $("remain").textContent = nv.remainText;
+        $("remain").classList.toggle("is-over", nv.isOver);
+      },
+    });
   },
 };
 
