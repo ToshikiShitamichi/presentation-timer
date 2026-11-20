@@ -248,7 +248,7 @@ const s03 = {
       `<div class="backup"><h2>講義のファイル</h2>` +
       `<button type="button" class="secondary" id="exportBtn">書き出す</button>` +
       `<button type="button" class="secondary" id="importFileBtn">ファイルから読み込む</button>` +
-      `<input type="file" id="importFile" accept=".json,application/json" hidden>` +
+      `<input type="file" id="importFile" hidden>` +
       `<p class="error" id="backupError" role="alert"></p>` +
       `<p class="notice" id="backupNotice" role="status"></p></div></section>`;
     container.querySelector("#toRegister").addEventListener("click", () => navigate("#/S-04"));
