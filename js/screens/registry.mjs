@@ -3,6 +3,9 @@
 import { liveView } from "../live-view.mjs";
 import { startLiveTicker } from "../live-ticker.mjs";
 import { registerLecture } from "../register.mjs";
+import { loadLectures } from "../storage.mjs";
+import { groupLecturesByDate } from "../lecture-list.mjs";
+import { runImport } from "../import-action.mjs";
 
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -171,9 +174,91 @@ const s04 = {
   },
 };
 
+// docs/mocks/S-03.html のスタイル
+const LIST_CSS = `
+  .list-screen { --panel: #1a2027; --line: #2c343d; --text: #eef2f5; --muted: #8c98a4; --accent: #5cc8ff;
+    min-height: 100%; box-sizing: border-box; color: var(--text);
+    padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 18px; max-width: 720px; margin: 0 auto; }
+  .list-screen h1 { font-size: 20px; font-weight: 700; }
+  .day h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+  .day ul { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
+  .lecture { width: 100%; text-align: left; cursor: pointer; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 4px; font: inherit; }
+  .lecture:active { border-color: var(--accent); }
+  .lecture .time { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .lecture .first { font-size: 14px; color: var(--muted); }
+  .empty { color: var(--muted); font-size: 15px; padding: 24px 0; text-align: center; }
+  .list-screen .primary { background: var(--accent); color: #06202e; border: none; border-radius: 10px;
+    font-size: 18px; font-weight: 700; padding: 16px; cursor: pointer; }
+  .list-screen .primary:active { opacity: .8; }
+`;
+
+// 講義の一覧画面。params: { storage（省略すると localStorage）, openLecture(lecture)（選んだ講義を S-02 へ渡す）, navigate(hash) }
+// 並べ方は js/lecture-list.mjs。
+const s03 = {
+  id: "S-03",
+  name: "講義の一覧",
+  render(container, params = {}) {
+    const storage = params.storage ?? globalThis.localStorage;
+    const navigate = params.navigate ?? ((hash) => { location.hash = hash; });
+    const groups = groupLecturesByDate(loadLectures(storage));
+    let list = "";
+    if (groups.length === 0) {
+      list = `<p class="empty">講義がまだ登録されていません。</p>`;
+    } else {
+      groups.forEach((g, gi) => {
+        list += `<div class="day"><h2>${escapeHtml(g.date)}</h2><ul>`;
+        g.items.forEach((it, ii) => {
+          list +=
+            `<li><button type="button" class="lecture" data-g="${gi}" data-i="${ii}">` +
+            `<span class="time num">${escapeHtml(it.timeText)}</span>` +
+            `<span class="first">${escapeHtml(it.first)}</span></button></li>`;
+        });
+        list += `</ul></div>`;
+      });
+    }
+    container.innerHTML =
+      `<style>${LIST_CSS}</style>` +
+      `<section class="list-screen" data-screen-id="S-03" id="s03">` +
+      `<h1>講義の一覧</h1><div id="lectureList">${list}</div>` +
+      `<button type="button" class="primary" id="toRegister">講義を登録する</button></section>`;
+    container.querySelector("#toRegister").addEventListener("click", () => navigate("#/S-04"));
+    container.querySelector("#lectureList").addEventListener("click", (e) => {
+      const btn = e.target.closest?.("button.lecture");
+      if (!btn || !params.openLecture) return;
+      params.openLecture(groups[Number(btn.dataset.g)].items[Number(btn.dataset.i)].lecture);
+    });
+  },
+};
+
+// 進行表の取り込み画面。params: { open(id, params)（S-02 へ blocks を渡して移る。navigator が渡す）}
+// 取り込みの処理は js/import-action.mjs。取り込めないときは #importError に出して移らない。
+const s01 = {
+  id: "S-01",
+  name: "進行表の取り込み",
+  render(container, params = {}) {
+    container.innerHTML =
+      `<style>${REGISTER_CSS}</style>` +
+      `<section class="import" data-screen-id="S-01" id="s01">` +
+      `<h1>講義時間管理アプリ</h1>` +
+      `<label for="tsv">進行表のテキスト（スプレッドシートからコピーして貼り付け）</label>` +
+      `<textarea id="tsv" spellcheck="false" placeholder="開始時間\t所要時間\tステップ\t進め方・手順\t…"></textarea>` +
+      `<p class="error" id="importError" role="alert"></p>` +
+      `<button type="button" id="importBtn">取り込む</button>` +
+      `</section>`;
+    const $ = (id) => container.querySelector("#" + id);
+    $("importBtn").addEventListener("click", () => {
+      const r = runImport($("tsv").value, params.open ?? (() => {}));
+      $("importError").textContent = r.ok ? "" : r.error;
+    });
+  },
+};
+
 export const screens = {
-  "S-01": placeholder("S-01", "進行表の取り込み", "tasks.md の T-009"),
+  "S-01": s01,
   "S-02": s02,
-  "S-03": placeholder("S-03", "講義の一覧", "tasks.md の T-008"),
+  "S-03": s03,
   "S-04": s04,
 };
