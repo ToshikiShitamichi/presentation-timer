@@ -111,3 +111,27 @@ export function importLectures(storage, text) {
   if (added > 0) saveLectures(storage, lectures);
   return { ok: true, added, skipped, warning: storageWarning(lectures.length) };
 }
+
+// ファイルの講義だけにして保存する（今の講義は全部消える。id は新しく付ける）。
+// 戻り値: { ok: true, count, warning } または { ok: false, error }（エラーのときは保存を変えない）
+export function replaceLectures(storage, text) {
+  const parsed = parseBackup(text);
+  if (parsed.error) return { ok: false, error: parsed.error };
+  if (parsed.lectures.length === 0) return { ok: false, error: "ファイルに講義が1件もありません。" };
+  let nextBlockId = 1;
+  const lectures = parsed.lectures.map((l, i) => {
+    const id = i + 1;
+    return {
+      id,
+      lecture_date: l.lecture_date,
+      blocks: l.blocks.map((b, idx) => {
+        const nb = { id: nextBlockId++, lecture_id: id, sort_order: Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : idx + 1 };
+        for (const k of BLOCK_STRINGS) nb[k] = typeof b[k] === "string" ? b[k] : "";
+        nb.is_break = b.is_break === true;
+        return nb;
+      }),
+    };
+  });
+  saveLectures(storage, lectures);
+  return { ok: true, count: lectures.length, warning: storageWarning(lectures.length) };
+}

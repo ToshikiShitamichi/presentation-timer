@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { exportLectures, importLectures, exportFileName, BACKUP_FORMAT } from "../js/backup.mjs";
+import { exportLectures, importLectures, exportFileName, replaceLectures, BACKUP_FORMAT } from "../js/backup.mjs";
 import { registerLecture } from "../js/register.mjs";
-import { loadLectures, STORAGE_KEY } from "../js/storage.mjs";
+import { loadLectures, deleteLecture, STORAGE_KEY } from "../js/storage.mjs";
 
 function memoryStorage() {
   const m = new Map();
@@ -93,4 +93,41 @@ test("90 件に達すると警告を返す", () => {
 
 test("ファイル名の例", () => {
   assert.equal(exportFileName(new Date(2026, 10, 20)), "presentation-timer-lectures-2026-11-20.json");
+});
+
+test("削除で指定の1件だけが消え、ほかは残る", () => {
+  const st = pcWith(["2026-11-20", TEXT1], ["2026-11-21", TEXT2]);
+  const before = loadLectures(st);
+  assert.equal(deleteLecture(st, before[0].id), true);
+  assert.deepEqual(loadLectures(st), [before[1]]);
+});
+
+test("存在しない id では何も変えない", () => {
+  const st = pcWith(["2026-11-20", TEXT1]);
+  const raw = st.getItem(STORAGE_KEY);
+  assert.equal(deleteLecture(st, 999), false);
+  assert.equal(st.getItem(STORAGE_KEY), raw);
+});
+
+test("置き換えで保存がファイルの中身だけになり、書き出すとファイルと同じ講義になる", () => {
+  const pc = pcWith(["2026-11-20", TEXT1], ["2026-11-21", TEXT2]);
+  const text = exportLectures(pc, new Date(2026, 10, 20));
+  const phone = pcWith(["2026-01-01", TEXT2], ["2026-01-02", TEXT2], ["2026-01-03", TEXT1]);
+  const r = replaceLectures(phone, text);
+  assert.deepEqual([r.ok, r.count], [true, 2]);
+  assert.deepEqual(loadLectures(phone).map((l) => l.lecture_date), ["2026-11-20", "2026-11-21"]);
+  assert.deepEqual(JSON.parse(exportLectures(phone, new Date(2026, 10, 20))).lectures, JSON.parse(text).lectures);
+});
+
+test("置き換えは、形式違い・壊れた JSON・0件・読めない講義では保存が変わらない", () => {
+  const st = pcWith(["2026-11-20", TEXT1]);
+  const raw = st.getItem(STORAGE_KEY);
+  const empty = JSON.stringify({ format: BACKUP_FORMAT, version: 1, lectures: [] });
+  const badLecture = JSON.stringify({ format: BACKUP_FORMAT, version: 1, lectures: [{ lecture_date: "2026-11-21", blocks: [{ start_time: "9:00" }] }, { lecture_date: "x", blocks: [] }] });
+  for (const t of ["{", JSON.stringify({ format: "other", version: 1, lectures: [] }), empty, badLecture]) {
+    const r = replaceLectures(st, t);
+    assert.equal(r.ok, false);
+    assert.ok(r.error.length > 0);
+    assert.equal(st.getItem(STORAGE_KEY), raw);
+  }
 });

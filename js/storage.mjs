@@ -58,3 +58,13 @@ export function addLecture(storage, lectureDate, blocks) {
   saveLectures(storage, lectures);
   return { lecture, warning: storageWarning(lectures.length) };
 }
+
+// 講義を1件取り除いて保存する（論理削除なし。docs/04_database.md）。ほかの講義は変えない。
+// 戻り値: 取り除いたら true、その id の講義がなければ false（保存は変えない）。
+export function deleteLecture(storage, id) {
+  const lectures = loadLectures(storage);
+  const rest = lectures.filter((l) => l.id !== Number(id));
+  if (rest.length === lectures.length) return false;
+  saveLectures(storage, rest);
+  return true;
+}
