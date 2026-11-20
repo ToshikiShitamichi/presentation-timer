@@ -44,6 +44,26 @@ test("境目: 開始ちょうど・終わりちょうど・最初の行より前
   assert.equal(liveView(blocks, at("23:00")).state, "after");
 });
 
+test("スライド範囲が空のブロックは、前の休憩でない値のあるブロックの値を出す", () => {
+  const b = parseSchedule(
+    [
+      "9:00\t0:10\t導入\t【01】\tスライド1〜8枚目",
+      "9:10\t0:10\t説明\t【02】\t",
+      "9:20\t0:05\t休憩\t【休憩】\t",
+      "9:25\t0:10\t演習\t【03】\t",
+    ].join("\n"),
+  );
+  assert.equal(liveView(b, at("9:05")).slides, "スライド1〜8枚目"); // 値があればそのまま
+  assert.equal(liveView(b, at("9:15")).slides, "スライド1〜8枚目"); // 空なら前の値
+  assert.equal(liveView(b, at("9:22")).slides, ""); // 休憩は今の表示のまま
+  assert.equal(liveView(b, at("9:27")).slides, "スライド1〜8枚目"); // 休憩を飛ばして前の値
+});
+
+test("前にも値がなければスライド範囲は空のまま", () => {
+  const b = parseSchedule(["9:00\t0:10\t導入\t【01】\t", "9:10\t0:10\t説明\t【02】\t"].join("\n"));
+  assert.equal(liveView(b, at("9:15")).slides, "");
+});
+
 test("現在時刻は Date でも渡せる", () => {
   const v = liveView(blocks, new Date(2026, 10, 19, 9, 31, 5));
   assert.equal(v.clock, "09:31:05");

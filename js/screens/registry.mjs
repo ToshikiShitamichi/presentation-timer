@@ -3,10 +3,10 @@
 import { liveView } from "../live-view.mjs";
 import { startLiveTicker } from "../live-ticker.mjs";
 import { registerLecture } from "../register.mjs";
-import { loadLectures } from "../storage.mjs";
+import { loadLectures, deleteLecture } from "../storage.mjs";
 import { groupLecturesByDate } from "../lecture-list.mjs";
 import { runImport } from "../import-action.mjs";
-import { exportLectures, exportFileName, importLectures } from "../backup.mjs";
+import { exportLectures, exportFileName, importLectures, replaceLectures } from "../backup.mjs";
 
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -35,7 +35,12 @@ const LIVE_CSS = `
   .live { height: 100%; box-sizing: border-box;
     padding: max(16px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
     display: grid; grid-template-rows: auto auto 1fr auto; gap: 2vh; }
-  .live .clock { font-size: clamp(28px, 9vw, 64px); font-weight: 600; color: var(--muted); }
+  .live { position: relative; }
+  .live .back { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); z-index: 1;
+    width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: transparent;
+    color: var(--muted); font-size: 24px; line-height: 1; cursor: pointer; }
+  .live .back:active { border-color: var(--accent); }
+  .live .clock { font-size: clamp(28px, 9vw, 64px); font-weight: 600; color: var(--muted); padding-left: 52px; }
   .live .slides { font-size: clamp(30px, 10vw, 80px); font-weight: 800; color: var(--accent); line-height: 1.15; }
   .live .content { font-size: clamp(20px, 6vw, 44px); font-weight: 700; line-height: 1.35; align-self: center; overflow-wrap: anywhere; }
   .live .content.is-break { color: var(--break); font-size: clamp(44px, 16vw, 120px); text-align: center; }
@@ -46,7 +51,8 @@ const LIVE_CSS = `
   @media (orientation: landscape) and (max-height: 600px) {
     .live { grid-template-columns: 1.4fr 1fr; grid-template-rows: auto 1fr auto; column-gap: 4vw; }
     .live .clock { grid-column: 2; grid-row: 1; text-align: right; font-size: clamp(24px, 6vh, 48px); }
-    .live .slides { grid-column: 1; grid-row: 1; font-size: clamp(26px, 9vh, 64px); }
+    .live .slides { grid-column: 1; grid-row: 1; font-size: clamp(26px, 9vh, 64px); padding-left: 52px; }
+    .live .clock { padding-left: 0; }
     .live .content { grid-column: 1; grid-row: 2 / 4; font-size: clamp(18px, 6vh, 40px); }
     .live .content.is-break { font-size: clamp(40px, 18vh, 110px); }
     .live .remain-wrap { grid-column: 2; grid-row: 2 / 4; align-self: end; border-top: none; text-align: right; }
@@ -79,14 +85,18 @@ const s02 = {
     container.innerHTML =
       `<style>${LIVE_CSS}</style>` +
       `<section class="live" data-screen-id="S-02" id="s02">` +
+      `<button type="button" class="back" id="backBtn" aria-label="一覧に戻る">←</button>` +
       `<div class="clock num" id="clock">${escapeHtml(v.clock)}</div>` +
       `<div class="slides" id="slides">${escapeHtml(v.slides)}</div>` +
       `<div class="content${v.isBreak ? " is-break" : ""}" id="content">${escapeHtml(content)}</div>` +
       `<div class="remain-wrap"><div class="remain-label" id="remainLabel">残り時間</div>` +
       `<div class="remain num${v.isOver ? " is-over" : ""}" id="remain">${escapeHtml(v.remainText)}</div></div>` +
       `</section>`;
-    if (!hasBlocks) return () => {};
     const $ = (id) => container.querySelector("#" + id);
+    // 「←」で S-03 へ。タイマーは navigator が前の画面のあと始末として止める
+    const navigate = params.navigate ?? ((hash) => { location.hash = hash; });
+    $("backBtn").addEventListener("click", () => navigate("#/S-03"));
+    if (!hasBlocks) return () => {};
     return startLiveTicker(blocks, {
       now: nowFn,
       setInterval: clock.setInterval,
@@ -184,7 +194,11 @@ const LIST_CSS = `
   .list-screen h1 { font-size: 20px; font-weight: 700; }
   .day h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
   .day ul { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
-  .lecture { width: 100%; text-align: left; cursor: pointer; background: var(--panel); color: var(--text);
+  .day li { display: flex; gap: 8px; align-items: stretch; }
+  .del { flex: none; background: transparent; color: #ff7a6b; border: 1px solid var(--line); border-radius: 12px;
+    padding: 0 14px; font: inherit; font-size: 14px; cursor: pointer; }
+  .del:active { border-color: #ff7a6b; }
+  .lecture { flex: 1; min-width: 0; text-align: left; cursor: pointer; background: var(--panel); color: var(--text);
     border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
     display: flex; flex-direction: column; gap: 4px; font: inherit; }
   .lecture:active { border-color: var(--accent); }
@@ -235,7 +249,8 @@ const s03 = {
           list +=
             `<li><button type="button" class="lecture" data-g="${gi}" data-i="${ii}">` +
             `<span class="time num">${escapeHtml(it.timeText)}</span>` +
-            `<span class="first">${escapeHtml(it.first)}</span></button></li>`;
+            `<span class="first">${escapeHtml(it.first)}</span></button>` +
+            `<button type="button" class="del" data-g="${gi}" data-i="${ii}" aria-label="${escapeHtml(g.date + " " + it.timeText + " を削除")}">削除</button></li>`;
         });
         list += `</ul></div>`;
       });
@@ -249,6 +264,8 @@ const s03 = {
       `<button type="button" class="secondary" id="exportBtn">書き出す</button>` +
       `<button type="button" class="secondary" id="importFileBtn">ファイルから読み込む</button>` +
       `<input type="file" id="importFile" hidden>` +
+      `<button type="button" class="secondary" id="replaceFileBtn">ファイルで置き換える</button>` +
+      `<input type="file" id="replaceFile" hidden>` +
       `<p class="error" id="backupError" role="alert"></p>` +
       `<p class="notice" id="backupNotice" role="status"></p></div></section>`;
     container.querySelector("#toRegister").addEventListener("click", () => navigate("#/S-04"));
@@ -298,7 +315,47 @@ const s03 = {
       if (err) err.textContent = "";
       if (note) note.textContent = msg;
     });
+    const confirmFn = params.confirm ?? ((m) => globalThis.confirm(m));
+    $("replaceFileBtn").addEventListener("click", () => $("replaceFile").click());
+    $("replaceFile").addEventListener("change", async () => {
+      const file = $("replaceFile").files?.[0];
+      if (!file) return;
+      let text;
+      try {
+        text = await file.text();
+      } catch {
+        $("backupError").textContent = "ファイルを読めませんでした。";
+        return;
+      }
+      // 確かめるために、保存を変えずに中身だけ調べる
+      const probe = replaceLectures({ getItem: () => null, setItem() {} }, text);
+      if (!probe.ok) {
+        $("replaceFile").value = "";
+        $("backupNotice").textContent = "";
+        $("backupError").textContent = probe.error;
+        return;
+      }
+      const now = loadLectures(storage).length;
+      if (!confirmFn(`今の講義 ${now} 件を消して、ファイルの ${probe.count} 件にします。よろしいですか？`)) {
+        $("replaceFile").value = "";
+        return;
+      }
+      const r = replaceLectures(storage, text);
+      rerender();
+      const err = container.querySelector("#backupError");
+      const note = container.querySelector("#backupNotice");
+      if (err) err.textContent = r.ok ? "" : r.error;
+      if (note) note.textContent = r.ok ? `${r.count} 件の講義に置き換えました。${r.warning ?? ""}` : "";
+    });
     container.querySelector("#lectureList").addEventListener("click", (e) => {
+      const del = e.target.closest?.("button.del");
+      if (del) {
+        const lec = groups[Number(del.dataset.g)].items[Number(del.dataset.i)];
+        if (!confirmFn(`${groups[Number(del.dataset.g)].date} ${lec.timeText} の講義を削除します。よろしいですか？`)) return;
+        deleteLecture(storage, lec.lecture.id);
+        rerender();
+        return;
+      }
       const btn = e.target.closest?.("button.lecture");
       if (!btn || !params.openLecture) return;
       params.openLecture(groups[Number(btn.dataset.g)].items[Number(btn.dataset.i)].lecture);

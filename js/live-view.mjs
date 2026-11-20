@@ -52,6 +52,18 @@ export function liveView(blocks, now) {
   view.state = "during";
   view.isBreak = b.is_break === true || firstLine(b.procedure) === BREAK_LABEL;
   view.slides = String(b.tools_materials ?? "").trim();
+  // 空なら、前のブロックのうち休憩でなく値のある一番近いものを出す（セル結合で上の行にだけ値がある進行表のため）。休憩のブロックは今のまま
+  if (view.slides === "" && !view.isBreak) {
+    for (let i = cur.index - 1; i >= 0; i--) {
+      const p = blocks[i];
+      if (p.is_break === true || firstLine(p.procedure) === BREAK_LABEL) continue;
+      const s = String(p.tools_materials ?? "").trim();
+      if (s !== "") {
+        view.slides = s;
+        break;
+      }
+    }
+  }
   view.content = view.isBreak ? BREAK_LABEL : firstLine(b.procedure);
   view.remainSeconds = remain;
   view.remainText = formatRemain(remain);

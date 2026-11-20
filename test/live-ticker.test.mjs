@@ -68,9 +68,10 @@ test("止めるとタイマーが消え、以降は更新されない（何度�
 // 最小の画面の入れ物（id で探せる要素）
 function fakeContainer() {
   const els = {};
-  const make = () => ({ textContent: "", classList: { toggle(name, on) { this.on = this.on ?? {}; this.on[name] = on; } } });
+  const make = () => ({ textContent: "", handlers: {}, addEventListener(t, f) { this.handlers[t] = f; }, classList: { toggle(name, on) { this.on = this.on ?? {}; this.on[name] = on; } } });
   return {
     set innerHTML(html) {
+      this.html = html;
       for (const m of html.matchAll(/id="(\w+)"/g)) els[m[1]] = make();
     },
     querySelector: (sel) => els[sel.slice(1)],
@@ -91,6 +92,23 @@ test("S-02 は1秒ごとに表示を更新し、返された関数でタイマ�
   stop(); // 別の画面へ移るとき
   assert.equal(c.cleared, 1);
   assert.equal(c.fn, null);
+});
+
+test("S-02 の「←」は S-03 へ移り、進行表がなくても出る。タイマーは返された関数で止まる", () => {
+  const c = fakeClock(timeToSeconds("9:30"));
+  const box = fakeContainer();
+  const nav = [];
+  const stop = screens["S-02"].render(box, { blocks, clock: c, navigate: (h) => nav.push(h) });
+  assert.match(box.html, /id="backBtn" aria-label="一覧に戻る"/);
+  box.els.backBtn.handlers.click();
+  assert.deepEqual(nav, ["#/S-03"]);
+  stop();
+  assert.equal(c.fn, null);
+  const box2 = fakeContainer();
+  const nav2 = [];
+  screens["S-02"].render(box2, { clock: fakeClock(0), navigate: (h) => nav2.push(h) });
+  box2.els.backBtn.handlers.click();
+  assert.deepEqual(nav2, ["#/S-03"]);
 });
 
 test("S-02 は進行表がないときタイマーを作らない", () => {
