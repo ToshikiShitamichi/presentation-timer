@@ -6,6 +6,7 @@ import { registerLecture } from "../register.mjs";
 import { loadLectures } from "../storage.mjs";
 import { groupLecturesByDate } from "../lecture-list.mjs";
 import { runImport } from "../import-action.mjs";
+import { exportLectures, exportFileName, importLectures } from "../backup.mjs";
 
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -193,7 +194,27 @@ const LIST_CSS = `
   .list-screen .primary { background: var(--accent); color: #06202e; border: none; border-radius: 10px;
     font-size: 18px; font-weight: 700; padding: 16px; cursor: pointer; }
   .list-screen .primary:active { opacity: .8; }
+  .backup { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .backup h2 { font-size: 15px; color: var(--muted); font-weight: 600; }
+  .list-screen .secondary { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; font-size: 16px; font-weight: 600; padding: 14px; cursor: pointer; }
+  .list-screen .secondary:disabled { opacity: .5; cursor: default; }
+  .list-screen .secondary:active { border-color: var(--accent); }
+  .list-screen .error { color: #ff7a6b; font-size: 14px; min-height: 1.4em; }
+  .list-screen .notice { color: var(--muted); font-size: 14px; }
 `;
+
+// 文字列をファイルとしてダウンロードさせる（ブラウザ用）
+function downloadText(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 // 講義の一覧画面。params: { storage（省略すると localStorage）, openLecture(lecture)（選んだ講義を S-02 へ渡す）, navigate(hash) }
 // 並べ方は js/lecture-list.mjs。
@@ -223,8 +244,60 @@ const s03 = {
       `<style>${LIST_CSS}</style>` +
       `<section class="list-screen" data-screen-id="S-03" id="s03">` +
       `<h1>講義の一覧</h1><div id="lectureList">${list}</div>` +
-      `<button type="button" class="primary" id="toRegister">講義を登録する</button></section>`;
+      `<button type="button" class="primary" id="toRegister">講義を登録する</button>` +
+      `<div class="backup"><h2>講義のファイル</h2>` +
+      `<button type="button" class="secondary" id="exportBtn">書き出す</button>` +
+      `<button type="button" class="secondary" id="importFileBtn">ファイルから読み込む</button>` +
+      `<input type="file" id="importFile" accept=".json,application/json" hidden>` +
+      `<p class="error" id="backupError" role="alert"></p>` +
+      `<p class="notice" id="backupNotice" role="status"></p></div></section>`;
     container.querySelector("#toRegister").addEventListener("click", () => navigate("#/S-04"));
+    const $ = (id) => container.querySelector("#" + id);
+    const download = params.download ?? downloadText;
+    const rerender = params.rerender ?? (() => s03.render(container, params));
+    if (groups.length === 0) {
+      $("exportBtn").disabled = true;
+      $("backupNotice").textContent = "書き出す講義がありません。";
+    }
+    $("exportBtn").addEventListener("click", () => {
+      $("backupError").textContent = "";
+      const text = exportLectures(storage);
+      if (text === null) {
+        $("backupNotice").textContent = "書き出す講義がありません。";
+        return;
+      }
+      const name = exportFileName();
+      download(name, text);
+      $("backupNotice").textContent = `${name} を書き出しました。`;
+    });
+    $("importFileBtn").addEventListener("click", () => $("importFile").click());
+    $("importFile").addEventListener("change", async () => {
+      const file = $("importFile").files?.[0];
+      if (!file) return;
+      let text;
+      try {
+        text = await file.text();
+      } catch {
+        $("backupError").textContent = "ファイルを読めませんでした。";
+        return;
+      }
+      const r = importLectures(storage, text);
+      if (!r.ok) {
+        $("importFile").value = "";
+        $("backupNotice").textContent = "";
+        $("backupError").textContent = r.error;
+        return;
+      }
+      rerender();
+      // 一覧を出し直したので、結果の文は新しい画面に入れる
+      const err = container.querySelector("#backupError");
+      const note = container.querySelector("#backupNotice");
+      let msg = `${r.added} 件の講義を足しました。`;
+      if (r.skipped > 0) msg += `同じ講義の ${r.skipped} 件は足していません。`;
+      if (r.warning) msg += r.warning;
+      if (err) err.textContent = "";
+      if (note) note.textContent = msg;
+    });
     container.querySelector("#lectureList").addEventListener("click", (e) => {
       const btn = e.target.closest?.("button.lecture");
       if (!btn || !params.openLecture) return;
