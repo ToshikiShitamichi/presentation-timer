@@ -182,8 +182,8 @@ AGENTS.md の6「おまかせの項目」への社長の答え（T-0381 への�
 - テーブル：なし
 - 依存するタスク：すべて
 - 完了条件：
-  - [ ] docs/changes-pending.md を、AGENTS.md の8の形式の変更報告JSONにまとめ、docs/change-reports/v1.json に保存する（AGENTS.md の7・8）
-  - [ ] 例：Service Worker なしの PWA（05 のオフライン）、Playwright の追加（05 の自動テスト）、技術スタック・公開先などの確定
+  - [x] docs/changes-pending.md を、AGENTS.md の8の形式の変更報告JSONにまとめ、docs/change-reports/v1.json に保存する（AGENTS.md の7・8）
+  - [x] 例：Service Worker なしの PWA（05 のオフライン）、Playwright の追加（05 の自動テスト）、技術スタック・公開先などの確定
 
 ## 要件とタスクの対応
 

@@ -1,0 +1,29 @@
+{
+  "revision": 1,
+  "changes": [
+    { "type": "add", "target": "business_rule", "id": "オフラインはオンライン前提（Service Worker なしの PWA）",
+      "content": { "name": "オフラインで使うか", "content": "オンライン前提に決めた（T-0381 の判断事項2）。Service Worker は作らず、PWA は manifest.webmanifest とホーム画面への追加で満たす。", "kind": "非機能要件（05_nonfunctional.md のオフライン）" },
+      "reason": "05 の「オフラインで使うか：おまかせ」を社長の答えで確定したため" },
+    { "type": "add", "target": "business_rule", "id": "自動テストに Playwright の画面テストを足す",
+      "content": { "name": "自動テスト", "content": "node --test の単体テストに加え、Playwright の画面テストも置く（判断事項7の B、判断待ち I-0630 で入れてよいと決定）。画面のテストは e2e/screens.spec.mjs、設定は playwright.config.mjs（e2e/ だけを読む）。テスト用サーバーは e2e/serve.mjs（127.0.0.1:4890。index.html・manifest.webmanifest・js/ の .mjs だけを配る）。時刻は page.clock.setFixedTime で固定。@playwright/test は devDependencies だけで、アプリ本体のパッケージは0個。", "kind": "非機能要件（05_nonfunctional.md の自動テスト）" },
+      "reason": "05 の「自動テスト：おまかせ」を社長の答えで確定したため" },
+    { "type": "add", "target": "business_rule", "id": "公開先は GitHub Pages",
+      "content": { "name": "公開先", "content": "GitHub Pages（main の root を配信、ビルドなし）。.nojekyll と docs/deploy.md を足した。docs と package.json も配信されるが機密は入っていない。講義の実データは端末ごとの保存で、配信には含まれない。", "kind": "非機能要件（05_nonfunctional.md の公開先）" },
+      "reason": "tasks.md の T-011 で公開先を確定したため" },
+    { "type": "change", "target": "business_rule", "id": "技術スタック・公開範囲・データ量",
+      "content": { "content": "05 の技術スタック・公開範囲・データ量は、docs/tasks.md の頭の「決めたこと」のとおりに確定した。" },
+      "reason": "「おまかせ」だった項目を社長の答えで確定したため（設計の文面は 05 に書き戻していない）" },
+    { "type": "change", "target": "business_rule", "id": "バックアップ（書き出しと読み込み）",
+      "content": { "name": "バックアップ", "content": "判断事項6（書き出しと読み込みは作らない）を、11/20 の社長の指示（T-0396）で変えて作った。保存した講義の全部を JSON ファイル（format が presentation-timer-lectures・version が1・exported_at・lectures。各講義は lecture_date と blocks）にして書き出す。講義が0件のときは押せず「書き出す講義がありません。」と出す。読み込みは、ファイルの講義を新しい id で足す（同じ日付で blocks の中身が同じ講義は足さない。足した件数と足さなかった件数を出す。形式違い・壊れた JSON は保存を変えずに赤い文を出す。90 件を超えたときは既存の警告も出す）。", "kind": "非機能要件（05_nonfunctional.md のバックアップ）" },
+      "reason": "貼り付けなしでスマホに講義を入れたいという社長の指示のため（js/backup.mjs・test/backup.test.mjs）" },
+    { "type": "change", "target": "screen", "id": "S-03",
+      "content": { "description": "講義のカードごとに「削除」ボタン（window.confirm で日付と時間帯を見せ、OK なら保存から取り除く。deletedAt は使わない。js/storage.mjs の deleteLecture）を足した。一覧に「書き出す」「ファイルから読み込む」「ファイルで置き換える」を足した（置き換えは、確かめてから保存をファイルの講義だけにする。id は新しく付ける。js/backup.mjs の replaceLectures）。運用は、PC の書き出しをスマホの正にし、スマホは「ファイルで置き換える」で読む。", "elements": ["削除ボタン", "書き出すボタン", "ファイルから読み込むボタン", "ファイルで置き換えるボタン"] },
+      "reason": "11/20 の社長の指示（T-0396・T-0398）" },
+    { "type": "change", "target": "screen", "id": "S-02",
+      "content": { "description": "左上に「←」の一覧に戻るボタン（aria-label は「一覧に戻る」）を足した。押すと S-03 へ移る（js/screens/registry.mjs）。", "elements": ["一覧に戻るボタン"] },
+      "reason": "11/20 の社長の指示（T-0397）" },
+    { "type": "change", "target": "criterion", "id": "R-004-1",
+      "content": { "response": "使用ツール・資料欄に書かれたスライド範囲をそのまま表示する。空のときは、前のブロックのうち休憩でなく値のある一番近いものの値を表示する。休憩のブロックは今のまま（出さない）。前にも値がなければ空。" },
+      "reason": "11/20 の社長の指示（T-0397）。js/live-view.mjs" }
+  ]
+}
