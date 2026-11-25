@@ -62,6 +62,16 @@ export function parseTsv(text) {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
+// ブロックの配列を、取り込みと同じタブ区切りのテキストに戻す（編集画面用）。
+// タブ・改行・引用符を含むセルは、引用符で囲み、中の引用符は2つにする（parseTsv で元に戻る）。
+export function blocksToTsv(blocks) {
+  const cell = (v) => {
+    const s = String(v ?? "");
+    return /[\t\r\n"]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return (blocks ?? []).map((b) => COLUMNS.map((k) => cell(b[k])).join("\t")).join("\n");
+}
+
 // ヘッダー行か（BR-003）。1列目が「開始時間」の行
 function isHeader(cells) {
   return cells[0].trim() === "開始時間";

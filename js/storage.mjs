@@ -76,6 +76,21 @@ export function addLecture(storage, title, blocks) {
   return { lecture, warning: storageWarning(lectures.length) };
 }
 
+// 講義1件のタイトルと進行表を置き換えて保存する（編集。S-05）。講義の id・並び・グループは変えない。
+// blocks は parseSchedule の結果。ブロックの id は、ほかの講義と重ならないよう新しく付ける。
+// 戻り値: { ok: true, lecture } か、その id の講義がなければ { ok: false }（保存は変えない）
+export function updateLecture(storage, id, title, blocks) {
+  const lectures = loadLectures(storage);
+  const i = lectures.findIndex((l) => l.id === Number(id));
+  if (i < 0) return { ok: false };
+  const lid = lectures[i].id;
+  let nextBlockId = lectures.reduce((m, l) => l.blocks.reduce((mm, b) => Math.max(mm, b.id), m), 0) + 1;
+  const lecture = { id: lid, title, blocks: blocks.map((b) => normalizeBlock({ ...b, id: nextBlockId++ }, lid)) };
+  lectures[i] = lecture;
+  saveLectures(storage, lectures);
+  return { ok: true, lecture };
+}
+
 // 講義を1件取り除いて保存する（論理削除なし。docs/04_database.md）。ほかの講義は変えない。
 // グループの並びからもその講義を外す（講義がなくなって空になったグループは、グループだけを取り除く）。
 // 戻り値: 取り除いたら true、その id の講義がなければ false（保存は変えない）。
