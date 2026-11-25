@@ -1,4 +1,4 @@
-// 画面のテスト用の静的サーバー（127.0.0.1 だけ）。配るのは index.html・manifest.webmanifest・js/ だけ
+// 画面のテスト用の静的サーバー（127.0.0.1 だけ）。配るのは index.html・manifest.webmanifest・version.json・js/ だけ
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const port = Number(process.argv[2] || 4890);
-const TYPES = { ".html": "text/html; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json" };
-const ALLOWED = (p) => p === "/index.html" || p === "/manifest.webmanifest" || /^\/js\/[\w./-]+\.mjs$/.test(p);
+const TYPES = { ".html": "text/html; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json", ".json": "application/json; charset=utf-8" };
+const ALLOWED = (p) => p === "/index.html" || p === "/manifest.webmanifest" || p === "/version.json" || /^\/js\/[\w./-]+\.mjs$/.test(p);
 
 createServer(async (req, res) => {
   let p = decodeURIComponent(new URL(req.url, "http://x").pathname);

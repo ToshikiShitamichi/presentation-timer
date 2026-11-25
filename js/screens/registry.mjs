@@ -2,9 +2,11 @@
 // render(container, params) は、画面の DOM を container に入れる。ユーザー入力を innerHTML に渡すときは escapeHtml を通すこと。
 import { liveView, stepShown } from "../live-view.mjs";
 import { startLiveTicker } from "../live-ticker.mjs";
-import { registerLecture } from "../register.mjs";
+import { registerLecture, editLecture } from "../register.mjs";
+import { blocksToTsv } from "../schedule-import.mjs";
 import { loadLectures, loadGroups, deleteLecture, addGroup, deleteGroup } from "../storage.mjs";
 import { buildList } from "../lecture-list.mjs";
+import { APP_VERSION } from "../version.mjs";
 import { runImport } from "../import-action.mjs";
 import { exportLectures, exportFileName, importLectures, replaceLectures } from "../backup.mjs";
 
@@ -211,6 +213,8 @@ const LIST_CSS = `
   .del { flex: none; background: transparent; color: #ff7a6b; border: 1px solid var(--line); border-radius: 12px;
     padding: 0 14px; font: inherit; font-size: 14px; cursor: pointer; }
   .del:active { border-color: #ff7a6b; }
+  .del.edit { color: var(--accent); }
+  .del.edit:active { border-color: var(--accent); }
   .lecture { flex: 1; min-width: 0; text-align: left; cursor: pointer; background: var(--panel); color: var(--text);
     border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
     display: flex; flex-direction: column; gap: 4px; font: inherit; }
@@ -266,6 +270,7 @@ const s03 = {
       `<span class="title">${escapeHtml(it.title)}</span>` +
       `<span class="time num">${escapeHtml(it.timeText)}</span>` +
       `<span class="first">${escapeHtml(it.first)}</span></button>` +
+      `<button type="button" class="del edit" data-id="${it.id}" aria-label="${escapeHtml(it.title + " " + it.timeText + " を編集")}">編集</button>` +
       `<button type="button" class="del" data-id="${it.id}" aria-label="${escapeHtml(it.title + " " + it.timeText + " を削除")}">削除</button></li>`;
     let list = "";
     if (lectures.length === 0) {
@@ -314,7 +319,9 @@ const s03 = {
       `<button type="button" class="secondary" id="replaceFileBtn">ファイルで置き換える</button>` +
       `<input type="file" id="replaceFile" hidden>` +
       `<p class="error" id="backupError" role="alert"></p>` +
-      `<p class="notice" id="backupNotice" role="status"></p></div></section>`;
+      `<p class="notice" id="backupNotice" role="status"></p></div>` +
+      `<p class="notice" id="appVersion"></p></section>`;
+    container.querySelector("#appVersion").textContent = "版 " + APP_VERSION;
     container.querySelector("#toRegister").addEventListener("click", () => navigate("#/S-04"));
     const $ = (id) => container.querySelector("#" + id);
     const download = params.download ?? downloadText;
@@ -417,6 +424,13 @@ const s03 = {
       });
     }
     container.querySelector("#lectureList").addEventListener("click", (e) => {
+      const ed = e.target.closest?.("button.edit");
+      if (ed) {
+        const id = Number(ed.dataset.id);
+        if (params.open) params.open("S-05", { id });
+        else navigate("#/S-05");
+        return;
+      }
       const del = e.target.closest?.("button.del");
       if (del) {
         if (del.dataset.gid !== undefined) {
@@ -448,6 +462,50 @@ const s03 = {
   },
 };
 
+// 講義の編集画面（S-05）。params: { id（編集する講義の id）, storage, navigate }
+// 今のタイトルと、進行表を取り込みと同じタブ区切りに戻したものを入れて出す。保存しても確認は出さない。
+// 「キャンセル」と「←」は、何も変えずに S-03 へ戻る。id がない・見つからないときは S-03 へ戻る。
+const s05 = {
+  id: "S-05",
+  name: "講義の編集",
+  render(container, params = {}) {
+    const storage = params.storage ?? globalThis.localStorage;
+    const navigate = params.navigate ?? ((hash) => { location.hash = hash; });
+    const lec = loadLectures(storage).find((l) => l.id === Number(params.id));
+    if (!lec) {
+      container.textContent = "";
+      navigate("#/S-03");
+      return;
+    }
+    container.innerHTML =
+      `<style>${REGISTER_CSS} .import .back { align-self: flex-start; background: transparent; color: var(--muted); border: 1px solid var(--line); font-size: 24px; padding: 6px 14px; }</style>` +
+      `<section class="import" data-screen-id="S-05" id="s05">` +
+      `<button type="button" class="back" id="editBack" aria-label="一覧に戻る">←</button>` +
+      `<h1>講義の編集</h1>` +
+      `<label for="editTitle">タイトル</label>` +
+      `<input type="text" id="editTitle" maxlength="100" autocomplete="off">` +
+      `<label for="editTsv">進行表のテキスト（タブ区切り）</label>` +
+      `<textarea id="editTsv" spellcheck="false"></textarea>` +
+      `<p class="error" id="editError" role="alert"></p>` +
+      `<button type="button" id="saveBtn">保存する</button>` +
+      `<button type="button" id="cancelBtn">キャンセル</button>` +
+      `</section>`;
+    const $ = (id) => container.querySelector("#" + id);
+    $("editTitle").value = lec.title;
+    $("editTsv").value = blocksToTsv(lec.blocks);
+    $("saveBtn").addEventListener("click", () => {
+      const r = editLecture(storage, lec.id, $("editTitle").value, $("editTsv").value);
+      if (!r.ok) {
+        $("editError").textContent = r.error;
+        return;
+      }
+      navigate("#/S-03");
+    });
+    $("cancelBtn").addEventListener("click", () => navigate("#/S-03"));
+    $("editBack").addEventListener("click", () => navigate("#/S-03"));
+  },
+};
+
 // 進行表の取り込み画面。params: { open(id, params)（S-02 へ blocks を渡して移る。navigator が渡す）}
 // 取り込みの処理は js/import-action.mjs。取り込めないときは #importError に出して移らない。
 const s01 = {
@@ -476,4 +534,5 @@ export const screens = {
   "S-02": s02,
   "S-03": s03,
   "S-04": s04,
+  "S-05": s05,
 };

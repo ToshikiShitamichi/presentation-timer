@@ -26,7 +26,9 @@
 - 状態の確認: `gh api repos/<ユーザー名>/presentation-timer/pages --jq .status`（built になれば公開済み）
 
 ## 更新するとき
+- 更新のたびに版の番号を上げる: `version.json` の version と、`js/version.mjs` の APP_VERSION を、同じ新しい番号（文字列。例 "2"）にする（違うとテストが失敗する）。`cd /d c:/work/presentation-timer && node scripts/bump-version.mjs 2` で2か所を同時に書き換えられる。
 - `cd /d c:/work/presentation-timer && git push`（main に push すると自動で入れ替わる）
+- 開いているアプリは、開いたときと画面が前に戻ったときに version.json を確かめ、番号が違えば自動で読み直す（講義中の表示 S-02 の間は待ち、S-02 を離れたときに読み直す）。Service Worker は使わない。
 
 ## 公開を止める
 - Pages だけ止める: `gh api -X DELETE repos/<ユーザー名>/presentation-timer/pages`（画面なら Settings → Pages → Unpublish site）
