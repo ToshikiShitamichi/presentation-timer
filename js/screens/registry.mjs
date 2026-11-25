@@ -2,8 +2,8 @@
 // render(container, params) は、画面の DOM を container に入れる。ユーザー入力を innerHTML に渡すときは escapeHtml を通すこと。
 import { liveView, stepShown } from "../live-view.mjs";
 import { startLiveTicker } from "../live-ticker.mjs";
-import { registerLecture, editLecture } from "../register.mjs";
-import { blocksToTsv } from "../schedule-import.mjs";
+import { registerLecture, editLecture, registerLectureForm, editLectureForm } from "../register.mjs";
+import { blocksToTsv, blocksToFormRows } from "../schedule-import.mjs";
 import { loadLectures, loadGroups, deleteLecture, addGroup, deleteGroup } from "../storage.mjs";
 import { buildList } from "../lecture-list.mjs";
 import { APP_VERSION } from "../version.mjs";
@@ -155,6 +155,95 @@ const REGISTER_CSS = `
     border-radius: 10px; padding: 12px; font-size: 16px; }
 `;
 
+// 進行表を1行ずつ入れるフォーム（S-04・S-05 の「フォーム」）。1行が1ブロック。
+const FORM_CSS = `
+  .import .modes { display: flex; gap: 8px; }
+  .import .modes button { flex: 1; background: transparent; color: var(--muted); border: 1px solid var(--line); font-size: 16px; padding: 10px; }
+  .import .modes button[aria-pressed=true] { background: var(--accent); color: #06202e; border-color: var(--accent); }
+  .import .fRow { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .import .fRow label { display: flex; flex-direction: column; gap: 4px; }
+  .import .fRow textarea { flex: none; min-height: 3.5em; font-family: inherit; }
+  .import .fRow .fHead { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 14px; }
+  .import .fRow label.fBreak { flex-direction: row; align-items: center; gap: 8px; }
+  .import .fRow .fDel, .import .fAdd { background: transparent; color: var(--accent); border: 1px solid var(--line); font-size: 16px; padding: 8px 14px; }
+`;
+const FORM_FIELDS = [
+  ["start_time", "開始時間", "input", "9:30"],
+  ["duration", "所要時間", "input", "0:10"],
+  ["step", "ステップ", "textarea"],
+  ["procedure", "進め方・手順", "textarea"],
+  ["tools_materials", "使用ツール・資料", "textarea"],
+  ["trouble_follow_up", "ハマりポイント／フォロー方法", "textarea"],
+  ["time_adjustment", "時間調整ポイント", "textarea"],
+];
+export function emptyFormRow() {
+  return { start_time: "", duration: "", step: "", procedure: "", tools_materials: "", trouble_follow_up: "", time_adjustment: "", is_break: false };
+}
+// フォームの行の HTML。入力された文字は escapeHtml を通す
+export function formRowsHtml(rows) {
+  return rows
+    .map((r, i) => {
+      let h = `<div class="fRow"><div class="fHead"><span>行 ${i + 1}</span><button type="button" class="fDel" aria-label="${i + 1}行目を削除">削除</button></div>`;
+      for (const [key, label, kind, ph] of FORM_FIELDS) {
+        const val = escapeHtml(r[key]);
+        h += kind === "input"
+          ? `<label>${label}<input type="text" data-f="${key}" value="${val}" autocomplete="off" placeholder="${ph}"></label>`
+          : `<label>${label}<textarea data-f="${key}" spellcheck="false">${val}</textarea></label>`;
+      }
+      h += `<label class="fBreak"><input type="checkbox" data-f="is_break"${r.is_break ? " checked" : ""}>休憩（進め方・手順を「【休憩】」にする）</label></div>`;
+      return h;
+    })
+    .join("");
+}
+function readFormRows(list) {
+  return Array.from(list.querySelectorAll(".fRow")).map((el) => {
+    const row = emptyFormRow();
+    for (const [key] of FORM_FIELDS) row[key] = el.querySelector(`[data-f="${key}"]`).value;
+    row.is_break = el.querySelector('[data-f="is_break"]').checked;
+    return row;
+  });
+}
+// 「貼り付け」「フォーム」の切り替えと、行の追加・削除をつなぐ。prefix は id の頭（reg / edit）。戻り値: 今のモードと行を返す関数
+function bindForm(container, prefix, initialRows) {
+  const $ = (id) => container.querySelector("#" + id);
+  let mode = "paste";
+  const list = $(prefix + "FormList");
+  const setMode = (m) => {
+    mode = m;
+    $(prefix + "PasteBox").hidden = m !== "paste";
+    $(prefix + "FormBox").hidden = m !== "form";
+    $(prefix + "ModePaste").setAttribute("aria-pressed", String(m === "paste"));
+    $(prefix + "ModeForm").setAttribute("aria-pressed", String(m === "form"));
+  };
+  $(prefix + "ModePaste").addEventListener("click", () => setMode("paste"));
+  $(prefix + "ModeForm").addEventListener("click", () => setMode("form"));
+  $(prefix + "AddRow").addEventListener("click", () => {
+    const rows = readFormRows(list);
+    rows.push(emptyFormRow());
+    list.innerHTML = formRowsHtml(rows);
+  });
+  list.addEventListener("click", (e) => {
+    const d = e.target.closest?.("button.fDel");
+    if (!d) return;
+    const rows = readFormRows(list);
+    const idx = Array.from(list.children).indexOf(d.closest(".fRow"));
+    if (idx < 0) return;
+    rows.splice(idx, 1);
+    list.innerHTML = formRowsHtml(rows);
+  });
+  return { mode: () => mode, rows: () => readFormRows(list) };
+}
+function formBoxHtml(prefix, pasteInner, rows) {
+  return (
+    `<div class="modes" role="group" aria-label="入力の方法">` +
+    `<button type="button" id="${prefix}ModePaste" aria-pressed="true">貼り付け</button>` +
+    `<button type="button" id="${prefix}ModeForm" aria-pressed="false">フォーム</button></div>` +
+    `<div id="${prefix}PasteBox">${pasteInner}</div>` +
+    `<div id="${prefix}FormBox" hidden><div id="${prefix}FormList" style="display:flex;flex-direction:column;gap:12px">${formRowsHtml(rows)}</div>` +
+    `<button type="button" class="fAdd" id="${prefix}AddRow">行を追加</button></div>`
+  );
+}
+
 // 講義の登録画面。params: { storage（省略すると localStorage）, navigate（省略すると location.hash を替える）}
 // 登録の処理は js/register.mjs。「登録する」で保存して S-03 へ移る。
 const s04 = {
@@ -164,21 +253,28 @@ const s04 = {
     const storage = params.storage ?? globalThis.localStorage;
     const navigate = params.navigate ?? ((hash) => { location.hash = hash; });
     container.innerHTML =
-      `<style>${REGISTER_CSS}</style>` +
+      `<style>${REGISTER_CSS}${FORM_CSS}</style>` +
       `<section class="import" data-screen-id="S-04" id="s04">` +
       `<h1>講義の登録</h1>` +
       `<label for="regTitle">タイトル</label>` +
       `<input type="text" id="regTitle" maxlength="100" autocomplete="off" placeholder="例: 11/25 午前の講義">` +
-      `<label for="regTsv">進行表のテキスト（スプレッドシートからコピーして貼り付け）</label>` +
-      `<textarea id="regTsv" spellcheck="false" placeholder="開始時間\t所要時間\tステップ\t進め方・手順\t…"></textarea>` +
+      formBoxHtml(
+        "reg",
+        `<label for="regTsv">進行表のテキスト（スプレッドシートからコピーして貼り付け）</label>` +
+          `<textarea id="regTsv" spellcheck="false" placeholder="開始時間\t所要時間\tステップ\t進め方・手順\t…"></textarea>`,
+        [emptyFormRow()],
+      ) +
       `<p class="error" id="regError" role="alert"></p>` +
       `<button type="button" id="registerBtn">登録する</button>` +
       `</section>`;
     const $ = (id) => container.querySelector("#" + id);
+    const form = bindForm(container, "reg", [emptyFormRow()]);
     let saved = false;
     $("registerBtn").addEventListener("click", () => {
       if (saved) { navigate("#/S-03"); return; } // 警告を見せたあとの「一覧へ」
-      const r = registerLecture(storage, $("regTitle").value, $("regTsv").value);
+      const r = form.mode() === "form"
+        ? registerLectureForm(storage, $("regTitle").value, form.rows())
+        : registerLecture(storage, $("regTitle").value, $("regTsv").value);
       if (!r.ok) {
         $("regError").textContent = r.error;
         return;
@@ -255,6 +351,9 @@ function downloadText(name, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// グループの開け閉めの状態（保存しない。画面の container ごとに、開いているグループの id を持つ）
+const OPEN_GROUPS = new WeakMap();
+
 // 講義の一覧画面。params: { storage（省略すると localStorage）, openLecture(lecture)（選んだ講義を S-02 へ渡す）, navigate(hash) }
 // 並べ方は js/lecture-list.mjs。
 const s03 = {
@@ -276,14 +375,20 @@ const s03 = {
     if (lectures.length === 0) {
       list = `<p class="empty">講義がまだ登録されていません。</p>`;
     } else {
+      const openSet = OPEN_GROUPS.get(container) ?? new Set();
+      OPEN_GROUPS.set(container, openSet);
       for (const g of groups) {
+        const open = openSet.has(g.id);
+        const word = open ? "閉じる" : "開く";
         list +=
           `<div class="day grp"><ul><li><button type="button" class="lecture groupOpen" data-gid="${g.id}">` +
           `<span class="title">${escapeHtml(g.title)}（グループ・通しで表示）</span>` +
           `<span class="time num">${escapeHtml(g.timeText)}</span>` +
           `<span class="first">${g.items.length} 件の講義</span></button>` +
-          `<button type="button" class="del delGroup" data-gid="${g.id}" aria-label="${escapeHtml(g.title + " グループを削除")}">削除</button></li>`;
-        for (const it of g.items) list += lectureLi(it, "member");
+          `<button type="button" class="del grpToggle" data-gid="${g.id}" aria-expanded="${open}" aria-controls="grpMembers-${g.id}" aria-label="${escapeHtml(g.title + " の講義を" + word)}">${word}</button>` +
+          `<button type="button" class="del delGroup" data-gid="${g.id}" aria-label="${escapeHtml(g.title + " グループを削除")}">削除</button></li></ul>` +
+          `<ul class="members" id="grpMembers-${g.id}"${open ? "" : " hidden"}>`;
+        if (open) for (const it of g.items) list += lectureLi(it, "member");
         list += `</ul></div>`;
       }
       if (singles.length > 0) {
@@ -424,6 +529,24 @@ const s03 = {
       });
     }
     container.querySelector("#lectureList").addEventListener("click", (e) => {
+      const tg = e.target.closest?.("button.grpToggle");
+      if (tg) {
+        const gid = Number(tg.dataset.gid);
+        const g = groups.find((x) => x.id === gid);
+        const set = OPEN_GROUPS.get(container) ?? new Set();
+        OPEN_GROUPS.set(container, set);
+        const ul = container.querySelector("#grpMembers-" + gid);
+        if (!g || !ul) return;
+        const open = !set.has(gid);
+        if (open) set.add(gid);
+        else set.delete(gid);
+        ul.innerHTML = open ? g.items.map((it) => lectureLi(it, "member")).join("") : "";
+        ul.hidden = !open;
+        tg.setAttribute("aria-expanded", String(open));
+        tg.textContent = open ? "閉じる" : "開く";
+        tg.setAttribute("aria-label", g.title + " の講義を" + (open ? "閉じる" : "開く"));
+        return;
+      }
       const ed = e.target.closest?.("button.edit");
       if (ed) {
         const id = Number(ed.dataset.id);
@@ -478,14 +601,17 @@ const s05 = {
       return;
     }
     container.innerHTML =
-      `<style>${REGISTER_CSS} .import .back { align-self: flex-start; background: transparent; color: var(--muted); border: 1px solid var(--line); font-size: 24px; padding: 6px 14px; }</style>` +
+      `<style>${REGISTER_CSS} .import .back { align-self: flex-start; background: transparent; color: var(--muted); border: 1px solid var(--line); font-size: 24px; padding: 6px 14px; }${FORM_CSS}</style>` +
       `<section class="import" data-screen-id="S-05" id="s05">` +
       `<button type="button" class="back" id="editBack" aria-label="一覧に戻る">←</button>` +
       `<h1>講義の編集</h1>` +
       `<label for="editTitle">タイトル</label>` +
       `<input type="text" id="editTitle" maxlength="100" autocomplete="off">` +
-      `<label for="editTsv">進行表のテキスト（タブ区切り）</label>` +
-      `<textarea id="editTsv" spellcheck="false"></textarea>` +
+      formBoxHtml(
+        "edit",
+        `<label for="editTsv">進行表のテキスト（タブ区切り）</label>` + `<textarea id="editTsv" spellcheck="false"></textarea>`,
+        blocksToFormRows(lec.blocks),
+      ) +
       `<p class="error" id="editError" role="alert"></p>` +
       `<button type="button" id="saveBtn">保存する</button>` +
       `<button type="button" id="cancelBtn">キャンセル</button>` +
@@ -493,8 +619,11 @@ const s05 = {
     const $ = (id) => container.querySelector("#" + id);
     $("editTitle").value = lec.title;
     $("editTsv").value = blocksToTsv(lec.blocks);
+    const form = bindForm(container, "edit", []);
     $("saveBtn").addEventListener("click", () => {
-      const r = editLecture(storage, lec.id, $("editTitle").value, $("editTsv").value);
+      const r = form.mode() === "form"
+        ? editLectureForm(storage, lec.id, $("editTitle").value, form.rows())
+        : editLecture(storage, lec.id, $("editTitle").value, $("editTsv").value);
       if (!r.ok) {
         $("editError").textContent = r.error;
         return;

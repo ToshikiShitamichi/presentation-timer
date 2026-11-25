@@ -73,6 +73,49 @@ test("一覧: グループと、グループに入っていない講義を出す
   assert.deepEqual(opened[1].blocks.map((b) => b.start_time), ["10:00", "11:00"]);
 });
 
+test("S-03 のグループの開け閉め: 最初は閉じ、押すと開き、もう一度で閉じる。グループごとに別々。保存は変わらない", () => {
+  const st = setup();
+  addGroup(st, "通し", ids(st, "午前", "午後"));
+  addGroup(st, "昼組", ids(st, "昼"));
+  const all = buildList(loadLectures(st), loadGroups(st)).groups;
+  const g1 = all.find((g) => g.title === "通し");
+  const g2 = all.find((g) => g.title === "昼組");
+  const nodes = {};
+  const c = { innerHTML: "", querySelector: (sel) => (nodes[sel] ??= { handlers: {}, innerHTML: "", hidden: true, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(t, f) { this.handlers[t] = f; } }) };
+  const opened = [];
+  screens["S-03"].render(c, { storage: st, openLecture: (x) => opened.push(x) });
+  // 最初は閉じていて、中の講義のカードは出ない
+  assert.match(c.innerHTML, new RegExp(`aria-expanded="false" aria-controls="grpMembers-${g1.id}"`));
+  assert.match(c.innerHTML, new RegExp(`id="grpMembers-${g1.id}" hidden>`));
+  assert.doesNotMatch(c.innerHTML, /class="member"/);
+  const raw = st.getItem(STORAGE_KEY);
+  const toggle = (g, el) => nodes["#lectureList"].handlers.click({ target: { closest: (s) => (s === "button.grpToggle" ? el : null) } });
+  const t1 = { dataset: { gid: String(g1.id) }, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+  const t2 = { dataset: { gid: String(g2.id) }, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+  toggle(g1, t1); // 開く（編集・削除のボタンも出る）
+  const m1 = nodes[`#grpMembers-${g1.id}`];
+  assert.equal(m1.hidden, false);
+  assert.equal(t1.attrs["aria-expanded"], "true");
+  assert.match(m1.innerHTML, /午前/);
+  assert.match(m1.innerHTML, /午後/);
+  assert.match(m1.innerHTML, /class="del edit"/);
+  assert.match(m1.innerHTML, /class="del" data-id/);
+  // もう1つは閉じたまま
+  assert.equal(nodes[`#grpMembers-${g2.id}`]?.hidden ?? true, true);
+  toggle(g2, t2); // 2つ目も開く。1つ目は開いたまま
+  assert.equal(nodes[`#grpMembers-${g2.id}`].hidden, false);
+  assert.equal(m1.hidden, false);
+  toggle(g1, t1); // 1つ目を閉じる。2つ目は開いたまま
+  assert.equal(m1.hidden, true);
+  assert.equal(m1.innerHTML, "");
+  assert.equal(t1.attrs["aria-expanded"], "false");
+  assert.equal(nodes[`#grpMembers-${g2.id}`].hidden, false);
+  // グループのカードを押すと、今のとおり通しの進行表が S-02 へ渡る。保存の形は変わらない
+  nodes["#lectureList"].handlers.click({ target: { closest: (s) => (s === "button.lecture" ? { dataset: { gid: String(g1.id) } } : null) } });
+  assert.deepEqual(opened[0].blocks.map((b) => b.start_time), ["10:00", "11:00", "13:00", "15:00"]);
+  assert.equal(st.getItem(STORAGE_KEY), raw);
+});
+
 test("グループを消しても中の講義は消えない。ない id では何も変えない", () => {
   const st = setup();
   addGroup(st, "通し", ids(st, "午前", "午後"));

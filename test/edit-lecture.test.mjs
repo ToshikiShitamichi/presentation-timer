@@ -131,7 +131,8 @@ test("S-03: 各講義に「編集」ボタン。押すと S-05 へ id を渡す"
   const c = { innerHTML: "", textContent: "", querySelector: (sel) => el(sel.slice(1)) };
   const opened = [];
   screens["S-03"].render(c, { storage: s, open: (id, p) => opened.push([id, p]) });
-  assert.equal((c.innerHTML.match(/>編集<\/button>/g) || []).length, 3);
+  // グループの中の講義は、グループを開くまで出ない（T-0430）。グループに入っていない講義だけが並ぶ
+  assert.equal((c.innerHTML.match(/>編集<\/button>/g) || []).length, 1);
   els.lectureList.handlers.click({ target: { closest: (q) => (q === "button.edit" ? { dataset: { id: "3" } } : null) } });
   assert.deepEqual(opened, [["S-05", { id: 3 }]]);
 });

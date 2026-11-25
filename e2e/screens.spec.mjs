@@ -83,6 +83,17 @@ test("グループ: 2件の講義をまとめて作り、通しの進行表で S
   await expect(page.locator("#content")).toHaveText("午後の内容");
   await expect(page.locator("#remain")).toHaveText("1:50:00");
   await page.click("#backBtn");
+  // 最初は閉じていて、中の講義は出ない。押すと開き、もう一度押すと閉じる
+  const toggle = page.locator("button.grpToggle");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("button.lecture:not(.groupOpen)")).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("button.lecture:not(.groupOpen)")).toHaveCount(2);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("button.lecture:not(.groupOpen)")).toHaveCount(0);
+  await toggle.click();
   await page.locator("button.lecture:not(.groupOpen)").first().click();
   await expect(page.locator("#s02")).toBeVisible();
 });
