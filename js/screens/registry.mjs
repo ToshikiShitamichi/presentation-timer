@@ -1,10 +1,10 @@
 // 画面ごとの置き場。各画面の中身は後続の tasks.md のタスクで作る（モックは docs/mocks/S-0x.html）。
 // render(container, params) は、画面の DOM を container に入れる。ユーザー入力を innerHTML に渡すときは escapeHtml を通すこと。
-import { liveView } from "../live-view.mjs";
+import { liveView, stepShown } from "../live-view.mjs";
 import { startLiveTicker } from "../live-ticker.mjs";
 import { registerLecture } from "../register.mjs";
-import { loadLectures, deleteLecture } from "../storage.mjs";
-import { groupLecturesByDate } from "../lecture-list.mjs";
+import { loadLectures, loadGroups, deleteLecture, addGroup, deleteGroup } from "../storage.mjs";
+import { buildList } from "../lecture-list.mjs";
 import { runImport } from "../import-action.mjs";
 import { exportLectures, exportFileName, importLectures, replaceLectures } from "../backup.mjs";
 
@@ -48,6 +48,10 @@ const LIVE_CSS = `
   .live .remain-label { font-size: clamp(13px, 3.5vw, 18px); color: var(--muted); }
   .live .remain { font-size: clamp(56px, 22vw, 160px); font-weight: 800; line-height: 1; }
   .live .remain.is-over { color: var(--warn); }
+  .live .step { display: flex; gap: 12px; margin-top: 1.5vh; }
+  .live .step button { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: transparent;
+    color: var(--accent); font-size: 18px; font-weight: 700; cursor: pointer; }
+  .live .step button:disabled { color: var(--muted); opacity: .4; cursor: default; }
   @media (orientation: landscape) and (max-height: 600px) {
     .live { grid-template-columns: 1.4fr 1fr; grid-template-rows: auto 1fr auto; column-gap: 4vw; }
     .live .clock { grid-column: 2; grid-row: 1; text-align: right; font-size: clamp(24px, 6vh, 48px); }
@@ -78,9 +82,10 @@ const s02 = {
     const hasBlocks = Array.isArray(blocks) && blocks.length > 0;
     const clock = params.clock ?? {};
     const nowFn = clock.now ?? (() => params.now ?? new Date());
+    let shown = null; // 手で進めたセクションの番号（null は時刻どおり）
     const v = hasBlocks
-      ? liveView(blocks, nowFn())
-      : { state: "none", clock: "--:--:--", slides: "", content: "", isBreak: false, remainText: "--:--", isOver: false };
+      ? liveView(blocks, nowFn(), shown)
+      : { state: "none", clock: "--:--:--", slides: "", content: "", isBreak: false, remainText: "--:--", isOver: false, canNext: false, canPrev: false };
     const content = v.state === "during" ? v.content : STATE_TEXT[v.state];
     container.innerHTML =
       `<style>${LIVE_CSS}</style>` +
@@ -90,9 +95,28 @@ const s02 = {
       `<div class="slides" id="slides">${escapeHtml(v.slides)}</div>` +
       `<div class="content${v.isBreak ? " is-break" : ""}" id="content">${escapeHtml(content)}</div>` +
       `<div class="remain-wrap"><div class="remain-label" id="remainLabel">残り時間</div>` +
-      `<div class="remain num${v.isOver ? " is-over" : ""}" id="remain">${escapeHtml(v.remainText)}</div></div>` +
+      `<div class="remain num${v.isOver ? " is-over" : ""}" id="remain">${escapeHtml(v.remainText)}</div>` +
+      `<div class="step"><button type="button" id="prevBtn"${v.canPrev ? "" : " disabled"}>前へ</button>` +
+      `<button type="button" id="nextBtn"${v.canNext ? "" : " disabled"}>次へ</button></div></div>` +
       `</section>`;
     const $ = (id) => container.querySelector("#" + id);
+    const apply = (nv) => {
+      $("clock").textContent = nv.clock;
+      $("slides").textContent = nv.slides;
+      $("content").textContent = nv.state === "during" ? nv.content : STATE_TEXT[nv.state];
+      $("content").classList.toggle("is-break", nv.isBreak);
+      $("remain").textContent = nv.remainText;
+      $("remain").classList.toggle("is-over", nv.isOver);
+      $("prevBtn").disabled = !nv.canPrev;
+      $("nextBtn").disabled = !nv.canNext;
+    };
+    const step = (dir) => {
+      if (!hasBlocks) return;
+      shown = stepShown(blocks, nowFn(), shown, dir);
+      apply(liveView(blocks, nowFn(), shown));
+    };
+    $("prevBtn").addEventListener("click", () => step(-1));
+    $("nextBtn").addEventListener("click", () => step(1));
     // 「←」で S-03 へ。タイマーは navigator が前の画面のあと始末として止める
     const navigate = params.navigate ?? ((hash) => { location.hash = hash; });
     $("backBtn").addEventListener("click", () => navigate("#/S-03"));
@@ -101,14 +125,8 @@ const s02 = {
       now: nowFn,
       setInterval: clock.setInterval,
       clearInterval: clock.clearInterval,
-      onUpdate(nv) {
-        $("clock").textContent = nv.clock;
-        $("slides").textContent = nv.slides;
-        $("content").textContent = nv.state === "during" ? nv.content : STATE_TEXT[nv.state];
-        $("content").classList.toggle("is-break", nv.isBreak);
-        $("remain").textContent = nv.remainText;
-        $("remain").classList.toggle("is-over", nv.isOver);
-      },
+      getShown: () => shown,
+      onUpdate: apply,
     });
   },
 };
@@ -125,22 +143,17 @@ const REGISTER_CSS = `
     background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
     padding: 12px; font-size: 14px; line-height: 1.5;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; }
-  .import textarea:focus, .import input[type=date]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .import textarea:focus, .import input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .import .error { color: var(--warn); font-size: 14px; min-height: 1.4em; }
   .import .notice { color: var(--muted); font-size: 14px; }
   .import button { background: var(--accent); color: #06202e; border: none; border-radius: 10px;
     font-size: 18px; font-weight: 700; padding: 16px; cursor: pointer; }
   .import button:active { opacity: .8; }
-  .import input[type=date] { background: var(--panel); color: var(--text); border: 1px solid var(--line);
-    border-radius: 10px; padding: 12px; font-size: 16px; color-scheme: dark; }
+  .import input[type=text] { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px; font-size: 16px; }
 `;
 
-function todayString(d = new Date()) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-// 講義の登録画面。params: { storage（省略すると localStorage）, navigate（省略すると location.hash を替える）, today（Date。省略すると今日）}
+// 講義の登録画面。params: { storage（省略すると localStorage）, navigate（省略すると location.hash を替える）}
 // 登録の処理は js/register.mjs。「登録する」で保存して S-03 へ移る。
 const s04 = {
   id: "S-04",
@@ -152,8 +165,8 @@ const s04 = {
       `<style>${REGISTER_CSS}</style>` +
       `<section class="import" data-screen-id="S-04" id="s04">` +
       `<h1>講義の登録</h1>` +
-      `<label for="regDate">日付</label>` +
-      `<input type="date" id="regDate" value="${escapeHtml(todayString(params.today))}">` +
+      `<label for="regTitle">タイトル</label>` +
+      `<input type="text" id="regTitle" maxlength="100" autocomplete="off" placeholder="例: 11/25 午前の講義">` +
       `<label for="regTsv">進行表のテキスト（スプレッドシートからコピーして貼り付け）</label>` +
       `<textarea id="regTsv" spellcheck="false" placeholder="開始時間\t所要時間\tステップ\t進め方・手順\t…"></textarea>` +
       `<p class="error" id="regError" role="alert"></p>` +
@@ -163,7 +176,7 @@ const s04 = {
     let saved = false;
     $("registerBtn").addEventListener("click", () => {
       if (saved) { navigate("#/S-03"); return; } // 警告を見せたあとの「一覧へ」
-      const r = registerLecture(storage, $("regDate").value, $("regTsv").value);
+      const r = registerLecture(storage, $("regTitle").value, $("regTsv").value);
       if (!r.ok) {
         $("regError").textContent = r.error;
         return;
@@ -202,6 +215,14 @@ const LIST_CSS = `
     border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
     display: flex; flex-direction: column; gap: 4px; font: inherit; }
   .lecture:active { border-color: var(--accent); }
+  .lecture .title { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+  .day.grp { border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+  .day.grp li.member { margin-left: 14px; }
+  .list-screen .groupOpen { border-color: var(--accent); }
+  .pick { display: flex; flex-direction: column; gap: 6px; }
+  .pick label { display: flex; gap: 8px; align-items: center; font-size: 15px; color: var(--text); min-height: 36px; overflow-wrap: anywhere; }
+  .list-screen input[type=text] { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px; font-size: 16px; }
   .lecture .time { font-size: 20px; font-weight: 700; color: var(--accent); }
   .lecture .first { font-size: 14px; color: var(--muted); }
   .empty { color: var(--muted); font-size: 15px; padding: 24px 0; text-align: center; }
@@ -238,28 +259,54 @@ const s03 = {
   render(container, params = {}) {
     const storage = params.storage ?? globalThis.localStorage;
     const navigate = params.navigate ?? ((hash) => { location.hash = hash; });
-    const groups = groupLecturesByDate(loadLectures(storage));
+    const lectures = loadLectures(storage);
+    const { groups, singles } = buildList(lectures, loadGroups(storage));
+    const lectureLi = (it, cls) =>
+      `<li${cls ? ` class="${cls}"` : ""}><button type="button" class="lecture" data-id="${it.id}">` +
+      `<span class="title">${escapeHtml(it.title)}</span>` +
+      `<span class="time num">${escapeHtml(it.timeText)}</span>` +
+      `<span class="first">${escapeHtml(it.first)}</span></button>` +
+      `<button type="button" class="del" data-id="${it.id}" aria-label="${escapeHtml(it.title + " " + it.timeText + " を削除")}">削除</button></li>`;
     let list = "";
-    if (groups.length === 0) {
+    if (lectures.length === 0) {
       list = `<p class="empty">講義がまだ登録されていません。</p>`;
     } else {
-      groups.forEach((g, gi) => {
-        list += `<div class="day"><h2>${escapeHtml(g.date)}</h2><ul>`;
-        g.items.forEach((it, ii) => {
-          list +=
-            `<li><button type="button" class="lecture" data-g="${gi}" data-i="${ii}">` +
-            `<span class="time num">${escapeHtml(it.timeText)}</span>` +
-            `<span class="first">${escapeHtml(it.first)}</span></button>` +
-            `<button type="button" class="del" data-g="${gi}" data-i="${ii}" aria-label="${escapeHtml(g.date + " " + it.timeText + " を削除")}">削除</button></li>`;
-        });
+      for (const g of groups) {
+        list +=
+          `<div class="day grp"><ul><li><button type="button" class="lecture groupOpen" data-gid="${g.id}">` +
+          `<span class="title">${escapeHtml(g.title)}（グループ・通しで表示）</span>` +
+          `<span class="time num">${escapeHtml(g.timeText)}</span>` +
+          `<span class="first">${g.items.length} 件の講義</span></button>` +
+          `<button type="button" class="del delGroup" data-gid="${g.id}" aria-label="${escapeHtml(g.title + " グループを削除")}">削除</button></li>`;
+        for (const it of g.items) list += lectureLi(it, "member");
         list += `</ul></div>`;
-      });
+      }
+      if (singles.length > 0) {
+        list += `<div class="day"><ul>${singles.map((it) => lectureLi(it)).join("")}</ul></div>`;
+      }
     }
+    const pick = lectures
+      .map(
+        (l) =>
+          `<label><input type="checkbox" class="pickBox" data-id="${l.id}">` +
+          `<span>${escapeHtml(l.title)}（${escapeHtml(l.blocks[0]?.start_time ?? "")}〜）</span></label>`,
+      )
+      .join("");
+    const groupMake =
+      lectures.length === 0
+        ? ""
+        : `<div class="backup" id="groupMake"><h2>グループを作る（同じ日の講義を通しで表示）</h2>` +
+          `<label for="groupTitle" class="notice">グループのタイトル</label>` +
+          `<input type="text" id="groupTitle" maxlength="100" autocomplete="off">` +
+          `<div class="pick" id="groupPick">${pick}</div>` +
+          `<p class="error" id="groupError" role="alert"></p>` +
+          `<button type="button" class="secondary" id="makeGroupBtn">グループを作る</button></div>`;
     container.innerHTML =
       `<style>${LIST_CSS}</style>` +
       `<section class="list-screen" data-screen-id="S-03" id="s03">` +
       `<h1>講義の一覧</h1><div id="lectureList">${list}</div>` +
       `<button type="button" class="primary" id="toRegister">講義を登録する</button>` +
+      groupMake +
       `<div class="backup"><h2>講義のファイル</h2>` +
       `<button type="button" class="secondary" id="exportBtn">書き出す</button>` +
       `<button type="button" class="secondary" id="importFileBtn">ファイルから読み込む</button>` +
@@ -272,7 +319,7 @@ const s03 = {
     const $ = (id) => container.querySelector("#" + id);
     const download = params.download ?? downloadText;
     const rerender = params.rerender ?? (() => s03.render(container, params));
-    if (groups.length === 0) {
+    if (lectures.length === 0) {
       $("exportBtn").disabled = true;
       $("backupNotice").textContent = "書き出す講義がありません。";
     }
@@ -310,6 +357,7 @@ const s03 = {
       const err = container.querySelector("#backupError");
       const note = container.querySelector("#backupNotice");
       let msg = `${r.added} 件の講義を足しました。`;
+      if (r.groupsAdded > 0) msg += `グループ ${r.groupsAdded} 件も足しました。`;
       if (r.skipped > 0) msg += `同じ講義の ${r.skipped} 件は足していません。`;
       if (r.warning) msg += r.warning;
       if (err) err.textContent = "";
@@ -347,18 +395,55 @@ const s03 = {
       if (err) err.textContent = r.ok ? "" : r.error;
       if (note) note.textContent = r.ok ? `${r.count} 件の講義に置き換えました。${r.warning ?? ""}` : "";
     });
+    // グループに入れる講義の選び（チェックの変化で覚える）
+    const picked = new Set();
+    if (lectures.length > 0) {
+      $("groupPick").addEventListener("change", (e) => {
+        const cb = e.target;
+        if (!cb?.dataset) return;
+        const id = Number(cb.dataset.id);
+        if (cb.checked) picked.add(id);
+        else picked.delete(id);
+      });
+      $("makeGroupBtn").addEventListener("click", () => {
+        // 選んだ順でなく、一覧の順（開始時刻は通しで並べ直すので、並びは表示に影響しない）
+        const ids = lectures.map((l) => l.id).filter((id) => picked.has(id));
+        const r = addGroup(storage, $("groupTitle").value, ids);
+        if (!r.ok) {
+          $("groupError").textContent = r.error;
+          return;
+        }
+        rerender();
+      });
+    }
     container.querySelector("#lectureList").addEventListener("click", (e) => {
       const del = e.target.closest?.("button.del");
       if (del) {
-        const lec = groups[Number(del.dataset.g)].items[Number(del.dataset.i)];
-        if (!confirmFn(`${groups[Number(del.dataset.g)].date} ${lec.timeText} の講義を削除します。よろしいですか？`)) return;
-        deleteLecture(storage, lec.lecture.id);
+        if (del.dataset.gid !== undefined) {
+          const g = groups.find((x) => x.id === Number(del.dataset.gid));
+          if (!g || !confirmFn(`グループ「${g.title}」を削除します（中の講義は消えません）。よろしいですか？`)) return;
+          deleteGroup(storage, g.id);
+          rerender();
+          return;
+        }
+        const lec = lectures.find((x) => x.id === Number(del.dataset.id));
+        if (!lec) return;
+        const range = [...singles, ...groups.flatMap((g) => g.items)].find((x) => x.id === lec.id)?.timeText ?? "";
+        if (!confirmFn(`${lec.title} ${range} の講義を削除します。よろしいですか？`)) return;
+        deleteLecture(storage, lec.id);
         rerender();
         return;
       }
       const btn = e.target.closest?.("button.lecture");
       if (!btn || !params.openLecture) return;
-      params.openLecture(groups[Number(btn.dataset.g)].items[Number(btn.dataset.i)].lecture);
+      if (btn.dataset.gid !== undefined) {
+        // グループは、講義の行を開始時刻の順に並べた1つの進行表として S-02 に渡す
+        const g = groups.find((x) => x.id === Number(btn.dataset.gid));
+        if (g) params.openLecture({ id: null, title: g.title, blocks: g.blocks });
+        return;
+      }
+      const lec = lectures.find((x) => x.id === Number(btn.dataset.id));
+      if (lec) params.openLecture(lec);
     });
   },
 };

@@ -1,29 +1,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupLecturesByDate } from "../js/lecture-list.mjs";
+import { buildList } from "../js/lecture-list.mjs";
 import { createNavigator } from "../js/navigator.mjs";
 import { screens } from "../js/screens/registry.mjs";
 import { STORAGE_KEY, loadLectures } from "../js/storage.mjs";
 
 const blk = (start, dur, procedure = "内容") => ({ start_time: start, duration: dur, step: "ステップ", procedure, is_break: false });
-const lec = (id, date, blocks) => ({ id, lecture_date: date, blocks });
+const lec = (id, title, blocks) => ({ id, title, blocks });
 
-test("日付ごとにまとめ、日付は古い順・同じ日は開始時刻順", () => {
-  const g = groupLecturesByDate([
+test("グループに入っていない講義は、タイトル順・同じタイトルは開始時刻順", () => {
+  const { groups, singles } = buildList([
     lec(1, "2026-12-02", [blk("13:00", "1:00", "午後")]),
     lec(2, "2026-12-01", [blk("9:30", "0:10", "<b>朝</b>"), blk("9:40", "0:05")]),
     lec(3, "2026-12-02", [blk("9:00", "0:30", "早い")]),
-  ]);
-  assert.deepEqual(g.map((x) => x.date), ["2026-12-01", "2026-12-02"]);
-  assert.deepEqual(g[1].items.map((i) => i.id), [3, 1]);
-  assert.equal(g[0].items[0].timeText, "9:30〜9:45");
-  assert.equal(g[0].items[0].first, "<b>朝</b>");
+  ], []);
+  assert.deepEqual(groups, []);
+  assert.deepEqual(singles.map((i) => i.id), [2, 3, 1]);
+  assert.equal(singles[0].timeText, "9:30〜9:45");
+  assert.equal(singles[0].first, "<b>朝</b>");
 });
 
 test("講義が0件・行がない講義でも落ちない", () => {
-  assert.deepEqual(groupLecturesByDate([]), []);
-  const g = groupLecturesByDate([lec(1, "2026-12-01", [])]);
-  assert.equal(g[0].items[0].timeText, "");
+  assert.deepEqual(buildList([], []), { groups: [], singles: [] });
+  const { singles } = buildList([lec(1, "2026-12-01", [])], []);
+  assert.equal(singles[0].timeText, "");
 });
 
 function memStorage(lectures) {
@@ -62,7 +62,7 @@ test("S-03: 「講義を登録する」で S-04、講義を選ぶと openLecture
   screens["S-03"].render(c, { storage: memStorage([l]), navigate: (h) => nav.push(h), openLecture: (x) => opened.push(x) });
   c.els.toRegister.handlers.click();
   assert.deepEqual(nav, ["#/S-04"]);
-  c.els.lectureList.handlers.click({ target: { closest: (s) => (s === "button.lecture" ? { dataset: { g: "0", i: "0" } } : null) } });
+  c.els.lectureList.handlers.click({ target: { closest: (s) => (s === "button.lecture" ? { dataset: { id: "5" } } : null) } });
   assert.equal(opened[0].id, 5);
 });
 
@@ -79,14 +79,14 @@ test("S-03: 削除はカードごと。確認でOKなら1件だけ取り除い�
     confirm: (m) => { asked.push(m); return answer; },
   });
   assert.match(c.innerHTML, /class="del"/);
-  const clickDel = (g) => c.els.lectureList.handlers.click({ target: { closest: (s) => (s === "button.del" ? { dataset: { g: String(g), i: "0" } } : null) } });
-  clickDel(0);
+  const clickDel = (id) => c.els.lectureList.handlers.click({ target: { closest: (s) => (s === "button.del" ? { dataset: { id: String(id) } } : null) } });
+  clickDel(1);
   assert.match(asked[0], /2026-12-01/);
   assert.match(asked[0], /9:30/);
   assert.deepEqual(loadLectures(st).map((l) => l.id), [1, 2]);
   assert.equal(rerendered, 0);
   answer = true;
-  clickDel(0);
+  clickDel(1);
   assert.deepEqual(loadLectures(st).map((l) => l.id), [2]);
   assert.equal(rerendered, 1);
   assert.equal(opened.length, 0);

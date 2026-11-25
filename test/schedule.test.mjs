@@ -60,7 +60,7 @@ test("T-002 講義1件に blocks を持たせて保存・読み込みできる",
   assert.equal(lecture.id, 1);
   const loaded = loadLectures(st);
   assert.deepEqual(loaded, [lecture]);
-  assert.deepEqual(Object.keys(loaded[0]).sort(), ["blocks", "id", "lecture_date"]);
+  assert.deepEqual(Object.keys(loaded[0]).sort(), ["blocks", "id", "title"]);
   assert.deepEqual(
     Object.keys(loaded[0].blocks[0]).sort(),
     ["duration", "id", "is_break", "lecture_id", "procedure", "sort_order", "start_time", "step", "time_adjustment", "tools_materials", "trouble_follow_up"],

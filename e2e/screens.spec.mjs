@@ -42,7 +42,7 @@ test("S-01 取り込み: 休憩の時間帯は「【休憩】」が出て、ス�
 test("S-04 登録 → S-03 一覧 → S-02 表示、「←」で S-03 へ戻る", async ({ page }) => {
   await fixTime(page, "2026-11-23T09:55:00");
   await page.goto("/#/S-04");
-  await page.fill("#regDate", "2026-11-23");
+  await page.fill("#regTitle", "11/23 午前");
   await page.fill("#regTsv", TSV);
   await page.click("#registerBtn");
   await expect(page.locator("#s03")).toBeVisible();
@@ -56,4 +56,33 @@ test("S-04 登録 → S-03 一覧 → S-02 表示、「←」で S-03 へ戻る"
   await page.click("#backBtn");
   await expect(page.locator("#s03")).toBeVisible();
   await expect(page.locator("button.lecture")).toHaveCount(1);
+});
+
+test("グループ: 2件の講義をまとめて作り、通しの進行表で S-02 に出る。講義は1件ずつも開ける", async ({ page }) => {
+  await fixTime(page, "2026-11-23T13:10:00");
+  const reg = async (title, tsv) => {
+    await page.goto("/#/S-04");
+    await page.fill("#regTitle", title);
+    await page.fill("#regTsv", tsv);
+    await page.click("#registerBtn");
+    await expect(page.locator("#s03")).toBeVisible();
+  };
+  await reg("午前", "10:00\t1:00\t導入\t午前の内容\tp.1\n11:00\t1:00\t演習\t午前の演習\tp.2\n");
+  await reg("午後", "13:00\t2:00\t応用\t午後の内容\tp.9\n");
+  await page.fill("#groupTitle", "");
+  await page.click("#makeGroupBtn");
+  await expect(page.locator("#groupError")).not.toHaveText("");
+  await page.fill("#groupTitle", "11/23 通し");
+  await page.check(".pickBox >> nth=0");
+  await page.check(".pickBox >> nth=1");
+  await page.click("#makeGroupBtn");
+  await expect(page.locator("button.groupOpen")).toHaveCount(1);
+  await expect(page.locator("button.groupOpen")).toContainText("10:00〜15:00");
+  await page.click("button.groupOpen");
+  await expect(page.locator("#s02")).toBeVisible();
+  await expect(page.locator("#content")).toHaveText("午後の内容");
+  await expect(page.locator("#remain")).toHaveText("1:50:00");
+  await page.click("#backBtn");
+  await page.locator("button.lecture:not(.groupOpen)").first().click();
+  await expect(page.locator("#s02")).toBeVisible();
 });

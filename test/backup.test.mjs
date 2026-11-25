@@ -43,7 +43,7 @@ test("ほかの講義の後ろに足され、id は重ならない", () => {
   assert.equal(r.added, 2);
   const ls = loadLectures(phone);
   assert.equal(ls.length, 3);
-  assert.deepEqual(ls.map((l) => l.lecture_date), ["2026-11-19", "2026-11-20", "2026-11-21"]);
+  assert.deepEqual(ls.map((l) => l.title), ["2026-11-19", "2026-11-20", "2026-11-21"]);
   assert.equal(new Set(ls.map((l) => l.id)).size, 3);
   const blockIds = ls.flatMap((l) => l.blocks.map((b) => b.id));
   assert.equal(new Set(blockIds).size, blockIds.length);
@@ -115,7 +115,7 @@ test("置き換えで保存がファイルの中身だけになり、書き出�
   const phone = pcWith(["2026-01-01", TEXT2], ["2026-01-02", TEXT2], ["2026-01-03", TEXT1]);
   const r = replaceLectures(phone, text);
   assert.deepEqual([r.ok, r.count], [true, 2]);
-  assert.deepEqual(loadLectures(phone).map((l) => l.lecture_date), ["2026-11-20", "2026-11-21"]);
+  assert.deepEqual(loadLectures(phone).map((l) => l.title), ["2026-11-20", "2026-11-21"]);
   assert.deepEqual(JSON.parse(exportLectures(phone, new Date(2026, 10, 20))).lectures, JSON.parse(text).lectures);
 });
 

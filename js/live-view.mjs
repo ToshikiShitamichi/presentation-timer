@@ -30,7 +30,28 @@ export function firstLine(text) {
 
 // 表示する中身。state: "before"（最初の行より前）／"during"（現在のブロックあり）／"after"（講義の終わり以降）
 // 戻り値: { state, clock, slides, content, isBreak, remainSeconds, remainText, isOver }
-export function liveView(blocks, now) {
+// shown: 手で進めたセクションの番号（null なら時刻どおり）。時刻で決まる今のセクションより後ろのときだけ効く。
+// 追加の戻り値: index（表示中の行の番号。during のとき）、canNext、canPrev
+export function effectiveIndex(blocks, now, shown = null) {
+  const cur = currentBlock(blocks, nowToSeconds(now));
+  if (!cur) return null;
+  if (Number.isInteger(shown) && shown > cur.index) return Math.min(shown, blocks.length - 1);
+  return cur.index;
+}
+
+// 次へ（dir=1）・前へ（dir=-1）を押したあとの shown を返す。範囲の外では今の値のまま。
+// 時刻で決まる今のセクションまで戻ったら null（時刻どおり）。
+export function stepShown(blocks, now, shown, dir) {
+  const t = nowToSeconds(now);
+  const cur = currentBlock(blocks, t);
+  if (!cur) return shown ?? null;
+  const eff = effectiveIndex(blocks, t, shown);
+  const next = eff + (dir < 0 ? -1 : 1);
+  if (next >= blocks.length || next < cur.index) return eff === cur.index ? null : eff;
+  return next === cur.index ? null : next;
+}
+
+export function liveView(blocks, now, shown = null) {
   const t = nowToSeconds(now);
   const view = {
     state: "before",
@@ -41,14 +62,24 @@ export function liveView(blocks, now) {
     remainSeconds: null,
     remainText: "--:--",
     isOver: false,
+    index: null,
+    canNext: false,
+    canPrev: false,
   };
-  const cur = currentBlock(blocks, t);
-  if (!cur) {
+  const timeCur = currentBlock(blocks, t);
+  if (!timeCur) {
     view.state = t >= lectureEnd(blocks).seconds ? "after" : "before";
     return view;
   }
+  const idx = effectiveIndex(blocks, t, shown);
+  const cur = { index: idx, block: blocks[idx] };
+  view.index = idx;
+  view.canNext = idx < blocks.length - 1;
+  view.canPrev = idx > timeCur.index;
   const b = cur.block;
-  const remain = timeToSeconds(b.start_time) + timeToSeconds(b.duration) - t; // BR-007
+  // BR-007（11/25 変更）: 次の行の開始時刻 − 今の時刻。最後の行は講義の終わりの時刻から引く
+  const endSec = idx + 1 < blocks.length ? timeToSeconds(blocks[idx + 1].start_time) : lectureEnd(blocks).seconds;
+  const remain = endSec - t;
   view.state = "during";
   view.isBreak = b.is_break === true || firstLine(b.procedure) === BREAK_LABEL;
   view.slides = String(b.tools_materials ?? "").trim();

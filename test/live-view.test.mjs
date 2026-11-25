@@ -70,11 +70,11 @@ test("現在時刻は Date でも渡せる", () => {
   assert.equal(v.state, "during");
 });
 
-test("次の行の開始より前に所要時間が終わると、残り時間は負（isOver）", () => {
+test("BR-007（11/25 変更）所要時間が先に終わっても、残り時間は次の行の開始までで、負にならない", () => {
   const b = parseSchedule("9:00\t0:05\tA\tX\n9:30\t0:05\tB\tY");
   const v = liveView(b, at("9:10"));
-  assert.equal(v.isOver, true);
-  assert.equal(v.remainText, "-5:00");
+  assert.equal(v.isOver, false);
+  assert.equal(v.remainText, "20:00");
 });
 
 test("表示の整形", () => {

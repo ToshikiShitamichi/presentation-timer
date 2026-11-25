@@ -13,7 +13,7 @@ export function startLiveTicker(blocks, options = {}) {
   const onUpdate = options.onUpdate ?? (() => {});
   let stopped = false;
   const tick = () => {
-    if (!stopped) onUpdate(liveView(blocks, now()));
+    if (!stopped) onUpdate(liveView(blocks, now(), options.getShown ? options.getShown() : null));
   };
   const handle = setTimer(tick, TICK_MS);
   return function stop() {
