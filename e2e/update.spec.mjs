@@ -1,4 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { APP_VERSION } from "../js/version.mjs";
+
+// 版の番号は js/version.mjs の APP_VERSION から組み立てる（版を上げても落ちない）
+const SAME = JSON.stringify({ version: APP_VERSION });
+const OTHER = JSON.stringify({ version: APP_VERSION + "-other" }); // APP_VERSION と必ず違う値
 
 // 版の自動更新（version.json の番号が違えば読み直す）。公開先の version.json はテストで差し替える
 const TSV =
@@ -15,11 +20,11 @@ async function serveVersion(page, state) {
 }
 
 test("同じ番号・壊れた中身・取れないときは読み直さない", async ({ page }) => {
-  const state = { body: '{"version":"2"}' };
+  const state = { body: SAME };
   await serveVersion(page, state);
   await page.goto("/#/S-03");
   await page.evaluate(() => { window.__marker = 1; });
-  for (const body of ['{"version":"2"}', "not json", null]) {
+  for (const body of [SAME, "not json", null]) {
     state.body = body;
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await page.waitForTimeout(300);
@@ -28,7 +33,7 @@ test("同じ番号・壊れた中身・取れないときは読み直さない",
 });
 
 test("番号が違えば自動で読み直す。読み直しを繰り返さない", async ({ page }) => {
-  const state = { body: '{"version":"999"}' };
+  const state = { body: OTHER };
   await serveVersion(page, state);
   let loads = 0;
   page.on("load", () => { loads++; });
@@ -41,19 +46,19 @@ test("番号が違えば自動で読み直す。読み直しを繰り返さな�
 });
 
 test("S-03 に版の番号が出る", async ({ page }) => {
-  await serveVersion(page, { body: '{"version":"2"}' });
+  await serveVersion(page, { body: SAME });
   await page.goto("/#/S-03");
-  await expect(page.locator("#appVersion")).toHaveText("版 2");
+  await expect(page.locator("#appVersion")).toHaveText(`版 ${APP_VERSION}`);
 });
 
 test("登録（S-04）の入力中は読み直さず、S-04 を離れたときに読み直す", async ({ page }) => {
-  const state = { body: '{"version":"2"}' };
+  const state = { body: SAME };
   await serveVersion(page, state);
   await page.goto("/#/S-04");
   await page.fill("#regTitle", "入力中のタイトル");
   await page.evaluate(() => { window.__marker = 1; });
 
-  state.body = '{"version":"999"}';
+  state.body = OTHER;
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => window.__marker)).toBe(1);
@@ -75,7 +80,7 @@ test("登録（S-04）の入力中は読み直さず、S-04 を離れたとき�
 });
 
 test("講義中の表示（S-02）の間は読み直さず、S-02 を離れたときに読み直す", async ({ page }) => {
-  const state = { body: '{"version":"2"}' };
+  const state = { body: SAME };
   await serveVersion(page, state);
   await page.clock.setFixedTime(new Date("2026-11-23T09:55:00"));
   await page.addInitScript(() => { if (!sessionStorage.getItem("seeded")) { localStorage.clear(); sessionStorage.setItem("seeded", "1"); } });
@@ -87,7 +92,7 @@ test("講義中の表示（S-02）の間は読み直さず、S-02 を離れた�
   await expect(page.locator("#s02")).toBeVisible();
   await page.evaluate(() => { window.__marker = 1; });
 
-  state.body = '{"version":"999"}';
+  state.body = OTHER;
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => window.__marker)).toBe(1); // S-02 の間はそのまま
